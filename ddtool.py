@@ -3,7 +3,7 @@ import sys
 import os
 import numpy as np
 import matplotlib as mpl
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas as pd
 
 from multicolumn_listbox import Multicolumn_Listbox
@@ -11,6 +11,7 @@ from multicolumn_listbox import Multicolumn_Listbox
 import tkinter
 from tkinter import ttk
 import tkinter.filedialog
+import tkinter.font
 
 
 class DDToolMain(ttk.Frame):
@@ -48,8 +49,9 @@ class DDToolMain(ttk.Frame):
         self.answer_label.bind("<Configure>", lambda e: self.answer_label.configure(width=e.width-10))
         
         # Labels that remain constant throughout execution.
-        ttk.Label(self, text='Number Adder').grid(column=0, row=0,
-                columnspan=4)
+        foo = ttk.Label(self, text='Temperature Data Files', font='fixed 14 bold')
+        foo.grid(column=0, row=0, columnspan=4, padx=3, pady=3)
+        #print(tkinter.font.Font(foo['font']).actual())
         ttk.Label(self, text='Number one').grid(column=0, row=2,
                 sticky='w')
         ttk.Label(self, text='Number two').grid(column=2, row=2,
@@ -71,10 +73,10 @@ class DDToolMain(ttk.Frame):
         # df.plot(x='t', y='s', ax=ax)
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.lf)
-        self.canvas.show()
+        self.canvas.draw()
         self.canvas.get_tk_widget().pack(expand=1)
         
-        toolbar = NavigationToolbar2TkAgg(self.canvas, self.lf)
+        toolbar = NavigationToolbar2Tk(self.canvas, self.lf)
         toolbar.update()
         # self.canvas._tkcanvas.pack(expand=1)
 
