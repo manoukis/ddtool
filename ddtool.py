@@ -24,10 +24,12 @@ class DDToolMain(ttk.Frame):
         self.init_gui()
 
     def init_gui(self):
-    
+
         """Builds GUI."""
         self.root.title("DD Tool")
         self.grid(column=0, row=0, sticky='nsew')
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
 
         # self.num1_entry = ttk.Entry(self, width=5)
         # self.num1_entry.grid(column=1, row = 2)
@@ -47,7 +49,7 @@ class DDToolMain(ttk.Frame):
         # self.answer_label.place(relx=0.5, rely=0.5, anchor=tkinter.CENTER)
         self.answer_label.pack(expand=True, fill='x')
         self.answer_label.bind("<Configure>", lambda e: self.answer_label.configure(width=e.width-10))
-        
+
         # Labels that remain constant throughout execution.
         foo = ttk.Label(self, text='Temperature Data Files', font='fixed 14 bold')
         foo.grid(column=0, row=0, columnspan=4, padx=3, pady=3)
@@ -62,7 +64,7 @@ class DDToolMain(ttk.Frame):
 
         # for child in self.winfo_children():
             # child.grid_configure(padx=5, pady=5)
-        
+
         self.lf = ttk.Labelframe(self, text="Plot Area")
         self.lf.grid(row=4, column=0, columnspan=4, sticky='nwes', padx=3, pady=3)
 

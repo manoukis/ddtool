@@ -267,7 +267,6 @@ class Multicolumn_Listbox(object):
             config_value = locals()[config_name]
             if config_value is not None:
                 kwargs[config_name] = config_value
-            
         self.interior.column('#%s'%(index+1), **kwargs)
 
     def row_data(self, index):
@@ -291,36 +290,27 @@ class Multicolumn_Listbox(object):
 
     def delete_row(self, index):
         list_of_items = self.interior.get_children()
-
         try:
             item_ID = list_of_items[index]
         except IndexError:
             raise ValueError("Row index out of range: %d"%index)
-
         self.interior.delete(item_ID)
         self._number_of_rows -= 1
-        
         if self._stripped_rows:
             for i in range(index, self._number_of_rows):
                 self.interior.tag_configure(list_of_items[i+1], background=self._stripped_rows[i%2])
-            
+
     def insert_row(self, data, index=None):
         if len(data) != self._number_of_columns:
             raise ValueError("The multicolumn listbox has only %d columns"%self._number_of_columns)
-        
         if index is None:
             index = self._number_of_rows-1
-
-        item_ID = self.interior.insert('', index, values=data)        
+        item_ID = self.interior.insert('', index, values=data)
         self.interior.item(item_ID, tags=item_ID)
-
-        self._number_of_rows += 1        
-
-        if self._stripped_rows:            
+        self._number_of_rows += 1
+        if self._stripped_rows:
             list_of_items = self.interior.get_children()
-
             self.interior.tag_configure(item_ID, background=self._stripped_rows[index%2])
-
             for i in range(index+1, self._number_of_rows):
                 self.interior.tag_configure(list_of_items[i], background=self._stripped_rows[i%2])
 
@@ -328,29 +318,33 @@ class Multicolumn_Listbox(object):
         return [self.interior.set(child_ID, index) for child_ID in self.interior.get_children('')]
 
     def update_column(self, index, data):
-        for i, item_ID in enumerate(self.interior.get_children()): 
+        for i, item_ID in enumerate(self.interior.get_children()):
             data_row = self.item_ID_to_row_data(item_ID)
             data_row[index] = data[i]
-
             self.interior.item(item_ID, values=data_row)
-
         return data
 
     def clear(self):
         # Another possibility:
         #  self.interior.delete(*self.interior.get_children())
-
         for row in self.interior.get_children():
             self.interior.delete(row)
-            
         self._number_of_rows = 0
-            
+
     def update(self, data):
         self.clear()
-
         for row in data:
             self.insert_row(row)
-            
+
+    def fit_width_to_content(self, padding=5):
+        for col in range(0, self.number_of_columns):
+            max_width = self._cell_font.measure(self._columns[col])
+            for row in range(0, self.number_of_rows):
+                tmp = self._cell_font.measure(self.cell_data(row, col))
+                if max_width < tmp:
+                    max_width = tmp
+            self.interior.column('#%s'%(col+1), minwidth=max_width+2*padding)
+
     def focus(self, index=None):
         if index is None:
             return self.interior.item(self.interior.focus())
