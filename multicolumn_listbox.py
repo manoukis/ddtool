@@ -137,20 +137,22 @@ class Multicolumn_Listbox(object):
         def __len__(self): 
             return self._multicolumn_listbox.number_of_columns
 
-    def __init__(self, master, columns, data=None, command=None, sort=True, select_mode=None, heading_anchor = CENTER, cell_anchor=W, style=None, height=None, padding=None, adjust_heading_to_content=False, stripped_rows=None, selection_background=None, selection_foreground=None, field_background=None, heading_font= None, heading_background=None, heading_foreground=None, cell_pady=2, cell_background=None, cell_foreground=None, cell_font=None, headers=True):
-
+    def __init__(self, master, columns, data=None, command=None, sort=True,
+                select_mode=None, heading_anchor = CENTER, cell_anchor=W,
+                style=None, height=None, padding=None, adjust_heading_to_content=False,
+                stripped_rows=None, selection_background=None, selection_foreground=None,
+                field_background=None, heading_font= None,
+                heading_background=None, heading_foreground=None,
+                cell_pady=2, cell_background=None, cell_foreground=None,
+                cell_font=None, headers=True):
         self._stripped_rows = stripped_rows
-
-        self._columns = columns
-        
+        self._columns = columns   
         self._number_of_rows = 0
         self._number_of_columns = len(columns)
-        
         self.row = self.List_Of_Rows(self)
         self.column = self.List_Of_Columns(self)
-        
+    
         s = Style()
-
         if style is None:
             style_name = "Multicolumn_Listbox%s.Treeview"%self._style_index
             self._style_index += 1
@@ -304,7 +306,7 @@ class Multicolumn_Listbox(object):
         if len(data) != self._number_of_columns:
             raise ValueError("The multicolumn listbox has only %d columns"%self._number_of_columns)
         if index is None:
-            index = self._number_of_rows-1
+            index = self._number_of_rows
         item_ID = self.interior.insert('', index, values=data)
         self.interior.item(item_ID, tags=item_ID)
         self._number_of_rows += 1
@@ -343,6 +345,8 @@ class Multicolumn_Listbox(object):
                 tmp = self._cell_font.measure(self.cell_data(row, col))
                 if max_width < tmp:
                     max_width = tmp
+            # if col == self.number_of_columns-1:
+                # max_width += 20 # extra padding to deal with vertical scrollbar overlap
             self.interior.column('#%s'%(col+1), minwidth=max_width+2*padding)
 
     def focus(self, index=None):
