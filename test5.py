@@ -15,11 +15,12 @@ class App(ttk.Frame):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.root = parent
         self.tfiles = ordereddict()
+        self.stations = []
         self.selected_files_strvar = tk.StringVar()
         self.root.title("DD Tool")
         self.pack(fill=tk.BOTH, expand=1)
 
-        # Temperature files area
+        ## Temperature files area
         foo = ttk.Label(self, text='Temperature Data Files', font='fixed 14 bold')
         foo.pack(fill=tk.X, expand=0, padx=3, pady=3)
 
@@ -49,13 +50,42 @@ class App(ttk.Frame):
         self.mc.fit_width_to_content()
 
         # buttons
-        remove_selected_files_button = ttk.Button(self, text='Remove Files', command=self._remove_selected_files)
+        mcbf = ttk.Frame(self)
+        mcbf.pack(fill=tk.BOTH, expand=0, side=tk.TOP, padx=0, pady=0)
+        remove_selected_files_button = ttk.Button(mcbf, text='Remove Files', command=self._remove_selected_files)
         remove_selected_files_button.pack(expand=0, side=tk.RIGHT, padx=3, pady=3)
-        open_button = ttk.Button(self, text='Add Files', command=self._selectFiles)
+        open_button = ttk.Button(mcbf, text='Add Files', command=self._selectFiles)
         open_button.pack(expand=0, side=tk.RIGHT, padx=3, pady=3)
-        sort_button = ttk.Button(self, text='Sort', command=self.sort_tfiles)
+        sort_button = ttk.Button(mcbf, text='Sort', command=self.sort_tfiles)
         sort_button.pack(expand=0, side=tk.LEFT, padx=3, pady=3)
 
+        ## Station priority 
+        self.station_priority_frame = ttk.LabelFrame(self, text='Station Priority')
+        self.station_priority_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=0, padx=3, pady=3)
+        self.stations_priority_lbs = []
+        
+    def update_stations(self):
+        tmp = [ x[1]['station'] for x in self.tfiles.items() ]
+        stations = []
+        for x in tmp:
+            if x not in stations:
+                stations.append(x)
+        print(stations)
+        # @TCC should preserve selections already made if possible
+        self.stations = stations
+
+        for lb in self.stations_priority_lbs:
+            lb.destroy()
+        self.stations_priority_lbs = [] 
+        for i,station in enumerate(self.stations):
+            lb = ttk.Combobox(self.station_priority_frame, state="readonly",
+                              values=self.stations[i:],
+                              exportselection=0)
+            lb.set(self.stations[i])
+            lb.pack(side=tk.LEFT, padx=3, pady=3)
+            self.stations_priority_lbs.append(lb)
+
+            
     def _selectFiles(self):
         selected_files = tk.filedialog.askopenfilenames(
                                 parent=self.root,
@@ -110,6 +140,7 @@ class App(ttk.Frame):
                     self.tfiles[fn]['station'] = station
                     self.tfiles[fn]['tcol'] = tcol[0]
         self.sort_tfiles()
+        self.update_stations()
 
     def sort_tfiles(self):
         # sort by station, first date, last date
