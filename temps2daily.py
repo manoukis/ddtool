@@ -5,24 +5,16 @@ Convert a set of temperature files with indiviual readings to daily min and max 
 
 import sys
 import os
-import fcntl
-import serial
-import minimalmodbus
 import time
 import configparser
 from itertools import chain
 import argparse
 from datetime import datetime
 import dateutil
-from threading import Event
-from collections import deque
-import signal
 import logging
 
+import numpy as np
 import pandas as pd
-
-import especmodbus
-
 
 # setup logging
 def getlvlnum(name):
@@ -62,7 +54,7 @@ def main(argv):
 
     # parse rest of arguments with a new ArgumentParser
     parser = argparse.ArgumentParser(description=__doc__, parents=[conf_parser])
-    parser.add_argument('-i', "--in", default=None,
+    parser.add_argument('-i', "--in-file", default=None,
             help="Filename of main (time, temperature) csv file")
     parser.add_argument('-q', "--quiet", action='count', default=0,
             help="Decrease verbosity")
@@ -78,21 +70,21 @@ def main(argv):
                                  (10*(args.quiet-args.verbose-args.verbose_level)))
 
     # check for required arguments
-    if args.file is None:
-        print("ERROR: -f/--input-file must be set", file=sys.stderr)
+    if args.in_file is None:
+        print("ERROR: -i/--in-file must be set", file=sys.stderr)
         sys.exit(1)
 
     # Startup output
     start_time = time.time()
     logging.info("Started @ {}".format(
-                        datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z"))
+                        datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
     logging.info(args)
 
     return_value = main_process(args)
 
     # cleanup and exit
     logging.info("Ended @ {}".format(
-                        datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z"))
+                        datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
     return return_value
 
 
