@@ -14,6 +14,7 @@ import dateutil
 import logging
 import io
 import glob
+import platform
 
 import numpy as np
 import pandas as pd
@@ -23,7 +24,7 @@ def getlvlnum(name):
     return name if isinstance(name, int) else logging.getLevelName(name)
 def getlvlname(num):
     return num if isinstance(num, str) else logging.getLevelName(num)
-logging.basicConfig(format='%(levelname)s:%(message)s')
+logging.basicConfig(format='%(levelname)s: %(message)s')
 logging.getLogger().setLevel(logging.INFO)
 
 
@@ -35,6 +36,7 @@ INLINE_DEFAULT_CFG_FILE = """
 date_column: Date
 temperature_column: Temperature
 hour_offset: -7
+infer_station_ids: 1
 
 files: a
 	b
@@ -63,10 +65,10 @@ def main(argv):
         cfg.read_file(chain(("[DEFAULTS]",), args.cfg_file))
         defaults = dict(cfg.items("DEFAULTS"))
         # special handling of paratmeters that need it like lists
-        #defaults['overwrite'] = defaults['overwrite'].lower() in ['true', 'yes', 'y', '1']
         if( 'files' in defaults ): # files needs to be a list
-            defaults['files'] = [ x for x in defaults['files'].split('\n') 
+            defaults['files'] = [ x for x in defaults['files'].split('\n')
                                 if x and x.strip() and not x.strip()[0] in ['#',';'] ]
+        defaults['infer_station_ids'] = defaults['infer_station_ids'].lower() in ['true', 'yes', 'y', '1']
     else:
         defaults = {}
 
@@ -84,6 +86,8 @@ def main(argv):
             help="Offset from times in file to localtime for grouping by day. "
             "Typically timezone offset from UTC; eg: CA is -7. "
             "Ignores daylight-savings")
+    parser.add_argument("--infer-station-ids", action='store_true', default=False,
+            help="Read the station IDs from temperature column headings for Hobo-style files.")
     parser.add_argument('-q', "--quiet", action='count', default=0,
             help="Decrease verbosity")
     parser.add_argument('-v', "--verbose", action='count', default=0,
@@ -113,15 +117,16 @@ def main(argv):
     # cleanup and exit
     logging.info("Ended @ {}".format(
                         datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
-    # pause so if this is being run as executable, the window doesn't disappear immediately
-    input("Press any key to exit")
+    # If Windows, pause so the cmd window doesn't disappear immediately
+    if platform.system() == 'Windows':
+        input("Press any key to exit")
     return return_value
 
 
 #######
 def main_process(args):
     print("main process")
-    
+
     # check the input files
     files = []
     for f in args.files:
@@ -136,40 +141,52 @@ def main_process(args):
     if not files:
         logging.critical("No input files found")
         return 1
-        
-    for f in files:
+
+    tfiles = []
+    df = None
+    for f in sorted(files):
         logging.info("Input file '{}'".format(f))
-        df = load_tfile(f, args.date_column, args.temperature_column)
-        if df is None:
+        t = load_tfile(f, args.date_column, args.temperature_column,
+                             args.infer_station_ids)
+        if t is None:
             logging.critical("Failed to load file '{}'".format(f))
             return 1
-        break
-    
+        tfiles.append(t)
+        print("###", t['df'].index[0], t['df'].index[-1], t['station'], t['filename'])
+
+        # merge
+        if df is None:
+            df = t['df']
+        else:
+            df = pd.concat((df, t['df']))
+
+    print(df)
+
     return 0
 
 
-def load_tfile(fn, date_column, temperature_column):
+def load_tfile(fn, date_column, temperature_column, infer_station_id):
+    """Load a csv file containing temperature data
+    returns a dict with a dataframe of just (Date, T) and some metadata
+    """
     df = pd.read_csv(fn, parse_dates=[date_column]).dropna()
     tcol = [x for x in df.columns if x.startswith(temperature_column)]
-    if len(tcol) < 1:
+    if not tcol:
         logging.critical("Temperature column starting with '{}' not found".format(temperature_column))
         return None
-    else:
-        tmp = [x.strip() for x in tcol[0].split(',')]
-        station = tmp[-1]
-        print(tmp, station)
-        
-        t = df.loc[:,[date_column,tcol[0]]]
-        t.set_index(date_column, inplace=True)
-        t.columns = ['T']
-        t.sort_index(inplace=True)
-        #t['station'] = station
-        first = t.index[0]
-        last = t.index[-1]
-        print(station, first, last)
-    print(t.shape)
-    print(t.head())
-    return t
+    if len(tcol) > 1:
+        logging.warn("Multiple temperature columns found. ONLY USING FIRST! file='{}' cols={}".format(fn, str(tcol)))
+    # infer station ID from temperature column heading (optional)
+    station_id = None
+    if infer_station_id: # hobo files have station id as last field in each sensor column heading
+        station_id = [x.strip() for x in tcol[0].split(',')][-1]
+    # reformat to just date,temperature dataframe
+    t = df.loc[:,[date_column,tcol[0]]]
+    t.set_index(date_column, inplace=True)
+    t.columns = ['T']
+    t.sort_index(inplace=True)
+    t['station'] = station_id
+    return {'filename':fn, 'temperature_column': tcol[0], 'station':station_id, 'df':t}
 
 ## Main hook for running as script
 if __name__ == "__main__":
