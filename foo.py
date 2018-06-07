@@ -143,7 +143,7 @@ def main_process(args):
         if df is None:
             logging.critical("Failed to load file '{}'".format(f))
             return 1
-        break
+#        break
     
     return 0
 
