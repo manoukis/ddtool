@@ -1,0 +1,30 @@
+# Agenda for call with Sean Farnum @ CDFA about ddtool
+
+## Temperature input
+
+What is the temperature input for the whole tool (replacing both COPY12.BAS and COPY32.BAS)?
+We shouldn't use the existing binary files like LAAR17.
+Are there existing text/excel files with the temperature data (sounds like it from instructions)?
+	Are those files just date, minT, maxT?
+Is there an existing database (Access) we should use instead?  That would take some figuring out.
+
+Assuming text/excel files:
+Are they put in a particular directory structure?  We should do that if not alraedy there.
+What exactly is that structure?
+If this is done right, should just be able to specify station and date instead of files.
+
+For future, we can probably automate going from sensor/hobo to text/excel files of min & max T, or database.
+That is a bigger topic though.
+
+
+## Output/results
+
+What is the desired output format?
+
+Might need Sean to run an example since it has problem reading the binary data format on my computer.
+
+
+## Configuration
+
+Having a small configuration file would be far better than entering things each time it is run.
+Not really a question.
