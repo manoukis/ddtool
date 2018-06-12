@@ -1,129 +1,194 @@
 #!/usr/bin/env python3
+"""
+"""
+
 import sys
 import os
+import time
+import configparser
+from itertools import chain
+import argparse
+from datetime import datetime
+import dateutil
+import logging
+import io
+import glob
+
 import numpy as np
-import matplotlib as mpl
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas as pd
 
-from multicolumn_listbox import Multicolumn_Listbox
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
-import tkinter
-from tkinter import ttk
-import tkinter.filedialog
-import tkinter.font
+# setup logging
+def getlvlnum(name):
+    return name if isinstance(name, int) else logging.getLevelName(name)
+def getlvlname(num):
+    return num if isinstance(num, str) else logging.getLevelName(num)
+logging.basicConfig(format='%(levelname)s:%(message)s')
+logging.getLogger().setLevel(logging.INFO)
 
 
-class DDToolMain(ttk.Frame):
-    """The gui and functions."""
-    def __init__(self, parent, *args, **kwargs):
-        ttk.Frame.__init__(self, parent, *args, **kwargs)
-        self.root = parent
-        self.selected_files = []
-        self.selected_files_strvar = tkinter.StringVar()
-        self.init_gui()
+## CONSTANTS ##
+# The default configuration (as a string so we don't need an extra file)
+INLINE_DEFAULT_CFG_FILE = """
+# test configuration file
 
-    def init_gui(self):
+temperatures_file: testfiles/Temp_20001.xlsx
 
-        """Builds GUI."""
-        self.root.title("DD Tool")
-        self.grid(column=0, row=0, sticky='nsew')
-        self.root.grid_rowconfigure(0, weight=1)
-        self.root.grid_columnconfigure(0, weight=1)
+station: Chino Hills
 
-        # self.num1_entry = ttk.Entry(self, width=5)
-        # self.num1_entry.grid(column=1, row = 2)
+norm_method: mean # use either 'mean' or 'median' for normal/typical temperatures
+num_years_to_add_for_projection: 3
 
-        self.open_button = ttk.Button(self, text='Select Files', command=self._selectFiles)
-        self.open_button.grid(column=1, row=2, padx=2, pady=2)
+"""
 
-        self.num2_entry = ttk.Entry(self, width=5)
-        self.num2_entry.grid(column=3, row=2)
+###
+def main(argv):
+    # parse cfg_file argument and set defaults
+    conf_parser = argparse.ArgumentParser(description=__doc__,
+                                          add_help=False)  # turn off help so later parse handles it
+    inline_default_cfg_file = io.StringIO(INLINE_DEFAULT_CFG_FILE)
+    inline_default_cfg_file.name = 'inline_default_cfg_file' # needs to have a name for argparse to work with it
+    conf_parser.add_argument(dest='cfg_file', nargs='?', type=argparse.FileType('r'),
+                             default=inline_default_cfg_file,
+                             help="Config file specifiying options/parameters.\n"
+                             "Any long option can be set by remove the leading '--' and replace '-' with '_'")
+    args, remaining_argv = conf_parser.parse_known_args(argv)
+    # build the config (read config files)
+    cfg_filename = None
+    if args.cfg_file:
+        cfg_filename = args.cfg_file.name
+        cfg = configparser.ConfigParser(inline_comment_prefixes=('#',';'))
+        cfg.optionxform = str # make configparser case-sensitive
+        cfg.read_file(chain(("[DEFAULTS]",), args.cfg_file))
+        defaults = dict(cfg.items("DEFAULTS"))
+        # special handling of paratmeters that need it like lists
+        defaults['num_years_to_add_for_projection'] = int(defaults['num_years_to_add_for_projection'])
+        #defaults['overwrite'] = defaults['overwrite'].lower() in ['true', 'yes', 'y', '1']
+        #if( 'files' in defaults ): # files needs to be a list
+        #    defaults['files'] = [ x for x in defaults['files'].split('\n')
+        #                        if x and x.strip() and not x.strip()[0] in ['#',';'] ]
+    else:
+        defaults = {}
 
-        self.answer_frame = ttk.LabelFrame(self, text='Answer')
-        self.answer_frame.grid(column=0, row=3, columnspan=4, sticky='nesw')
-        self.answer_label = tkinter.Message(self.answer_frame,
-                                textvariable=self.selected_files_strvar,
-                                )
-        # self.answer_label.grid(column=0, row=0)
-        # self.answer_label.place(relx=0.5, rely=0.5, anchor=tkinter.CENTER)
-        self.answer_label.pack(expand=True, fill='x')
-        self.answer_label.bind("<Configure>", lambda e: self.answer_label.configure(width=e.width-10))
+    if cfg_filename == 'inline_default_cfg_file':
+        print("Using default configuration")
+    else:
+        print("Using configuration file '{}'".format(cfg_filename))
 
-        # Labels that remain constant throughout execution.
-        foo = ttk.Label(self, text='Temperature Data Files', font='fixed 14 bold')
-        foo.grid(column=0, row=0, columnspan=4, padx=3, pady=3)
-        #print(tkinter.font.Font(foo['font']).actual())
-        ttk.Label(self, text='Number one').grid(column=0, row=2,
-                sticky='w')
-        ttk.Label(self, text='Number two').grid(column=2, row=2,
-                sticky='w')
+    # parse rest of arguments with a new ArgumentParser
+    parser = argparse.ArgumentParser(description=__doc__, parents=[conf_parser])
+    parser.add_argument("-f","--temperatures_file", default=None,
+            help="File containing the daily min & max temperature data for all sites")
+    parser.add_argument("-s","--station", default=None,
+            help="Name of temperature station")
+    parser.add_argument("--num-years-to-add-for-projection", type=int, default=3,
+            help="Number of years of normal temperatures to generate for projection")
+    parser.add_argument('-q', "--quiet", action='count', default=0,
+            help="Decrease verbosity")
+    parser.add_argument('-v', "--verbose", action='count', default=0,
+            help="Increase verbosity")
+    parser.add_argument("--verbose_level", type=int, default=0,
+            help="Set verbosity level as a number")
 
-        ttk.Separator(self, orient='horizontal').grid(column=0,
-                row=1, columnspan=4, sticky='ew')
+    parser.set_defaults(**defaults) # add the defaults read from the config file
+    args = parser.parse_args(remaining_argv)
 
-        # for child in self.winfo_children():
-            # child.grid_configure(padx=5, pady=5)
+    if not args.station:
+        parser.error("Must provide a station name")
 
-        self.lf = ttk.Labelframe(self, text="Plot Area")
-        self.lf.grid(row=4, column=0, columnspan=4, sticky='nwes', padx=3, pady=3)
+    logging.getLogger().setLevel(logging.getLogger().getEffectiveLevel()+
+                                 (10*(args.quiet-args.verbose-args.verbose_level)))
+    # Startup output
+    start_time = time.time()
+    logging.info("Started @ {}".format(
+                        datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
+    logging.info("args="+str(args))
 
-        self.fig = mpl.figure.Figure(figsize=(5,4), dpi=100)
-        # t = np.arange(0.0,3.0,0.01)
-        # df = pd.DataFrame({'t':t, 's':np.sin(2*np.pi*t)})
-        # ax = fig.add_subplot(111)
-        # df.plot(x='t', y='s', ax=ax)
+    retval = main_process(args)
 
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.lf)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(expand=1)
-        
-        toolbar = NavigationToolbar2Tk(self.canvas, self.lf)
-        toolbar.update()
-        # self.canvas._tkcanvas.pack(expand=1)
+    # cleanup and exit
+    logging.info("Ended @ {}".format(
+                        datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
+    #input("Press any key to exit")
+    return retval
 
-        self.plot_button = ttk.Button(self.lf, text='Plot', command=self._plot)
-        self.plot_button.pack()
 
-        
-        self.mc = Multicolumn_Listbox(self, ["column one","column two", "column three"],
-                stripped_rows = ("white","#f2f2f2"),
-                command=self._on_select,
-                adjust_heading_to_content=True,
-                cell_anchor="center")
-        self.mc.interior.grid(row=5, column=0, columnspan=4, sticky='nwes', padx=3, pady=3)
-        
-        self.mc.table_data = np.random.randint(0,10, size=(20,3)).tolist()
+#######
+def main_process(args):
+    print("main process")
 
-        self.quit_button = ttk.Button(self, text='Quit', command=self._quit)
-        self.quit_button.grid(column=3, row=6, sticky='se', padx=2, pady=2)
-        
-    def _quit(self):
-        self.root.quit()     # stops mainloop
-        self.root.destroy()  # this is necessary on Windows to prevent
-                             # Fatal Python Error: PyEval_RestoreThread: NULL tstate
-    
-    def _selectFiles(self):
-        self.selected_files = tkinter.filedialog.askopenfilenames(
-                                parent=self.root,
-                                title='Choose Temperature Files')
-        self.selected_files_strvar.set(str(self.selected_files))
-        self.mc.table_data = np.random.randint(0,1000, size=(20,3)).tolist()
+    fn = args.temperatures_file
+    station = args.station
+    interp_window = 3
+    norm_method = args.norm_method.lower().strip()
+    num_years_to_add_for_projection = args.num_years_to_add_for_projection
 
-    def _on_select(self, data):
-        print("called command when row is selected")
-        print(data)
+    df = pd.read_excel(fn, skiprows=[0])
+    if df is None:
+        logging.critical("Failed to load temperatures file '{}'".format(fn))
+        return 1
+    df = df.loc[df['STATION'] == station]
+    df.set_index(['Date'], verify_integrity=True, inplace=True)
+    df.sort_index(inplace=True)
+    df = df.resample('D').mean() # ensure daily frequency
 
-    def _plot(self):
-        self.fig.clear()
-        t = np.arange(0.0,3.0,0.01)
-        df = pd.DataFrame({'t':t, 's':np.sin(2*np.pi*t)})
-        ax = self.fig.add_subplot(111)
-        df.plot(x='t', y='s', ax=ax)
-        self.canvas.draw()
-    
-        
-if __name__ == '__main__':
-    root = tkinter.Tk()
-    DDToolMain(root)
-    root.mainloop()
+    ## fill missing data with interpolation ##
+    missing_days = df.index[df.isna().any(axis=1)]
+    print(missing_days)
+    if interp_window <= 1: # simple linear interpolation
+        t = df.interpolate(method='linear')
+    else: # interpolation based on smoothed / rolling mean values
+        t = df.copy()
+        rt = t.rolling(interp_window, center=True).mean().interpolate(method='linear')
+        t.loc[missing_days] = rt.loc[missing_days]
+        t = t.interpolate(method='linear') # fill in any remaining missing values
+
+    ## compute normal temperatures for projection ##
+    @TCC TODO MAX NUM YEARS FOR NORM
+    gb = t.groupby([t.index.month, t.index.day])
+    if norm_method == 'mean':
+        norm = gb.mean()
+    elif norm_method == 'median':
+        norm = gb.median()
+    else:
+        log.critical("norm_method '{}' not understood".format(norm_method))
+        return 1
+    if (2,29) in norm.index: # drop Feb 29 if it is in there
+        norm.drop((2,29))
+    norm.sort_index(inplace=True)
+    ## make dataframe of multiple normal years
+    lnorm = None
+    for yr in np.arange(0,num_years_to_add_for_projection)+t.index[-1].year:
+        idx = pd.date_range(start='{:04d}-{:02d}-{:02d}'.format(yr,*norm.index[0]),
+                            end=  '{:04d}-{:02d}-{:02d}'.format(yr,*norm.index[-1]),
+                            freq='D')
+        if idx.shape[0] == 366: # leapyear
+            idx = idx[(idx.month!=2) | (idx.day!=29)]
+        tmp = norm.copy()
+        tmp.index = idx
+        if lnorm is None:
+            lnorm = tmp
+        else:
+            lnorm = pd.concat((lnorm, tmp), axis=0)
+        lnorm.resample('D').mean()
+        lnorm.interpolate(method='linear') # fill in any 02-29
+
+    t = pd.concat((t, lnorm.loc[t.index[-1]:]))
+    print(t.shape)
+
+    fig = plt.figure(figsize=(10,8))
+    ax = fig.add_subplot(1,1,1)
+    ax.plot(df.index, df['MinOfTEMP_A_F'], ls='none', marker='o', label='input')
+    ax.plot(t.index, t['MinOfTEMP_A_F'], marker='.', label='interpolated')
+    ax.legend()
+    plt.show()
+
+
+    return 0
+
+
+## Main hook for running as script
+if __name__ == "__main__":
+    sys.exit(main(argv=None))
