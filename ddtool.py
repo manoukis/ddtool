@@ -42,6 +42,12 @@ max_num_years_to_norm: 3
 norm_method: median # use either 'mean' or 'median' for normal/typical temperatures
 num_years_to_add_for_projection: 3
 
+skiprows: 1
+station_col: STATION
+date_col: Date
+min_air_temp_col: MinOfTEMP_A_F
+max_air_temp_col: MaxOfTEMP_A_F
+
 """
 
 ###
@@ -66,7 +72,8 @@ def main(argv):
         defaults = dict(cfg.items("DEFAULTS"))
         # special handling of paratmeters that need it like lists
         for k in ['max_num_years_to_norm',
-                  'num_years_to_add_for_projection']:
+                  'num_years_to_add_for_projection',
+                  'skiprows']:
             if k in defaults:
                 defaults[k] = int(defaults[k])
         #defaults['overwrite'] = defaults['overwrite'].lower() in ['true', 'yes', 'y', '1']
@@ -92,6 +99,16 @@ def main(argv):
                 "Default (0) uses all available data")
     parser.add_argument("--num-years-to-add-for-projection", type=int, default=3,
             help="Number of years of normal temperatures to generate for projection")
+    parser.add_argument("--skiprows", type=int, default=1,
+            help="Number of initial rows to skip of input temperature data file")
+    parser.add_argument("--station_col", default="STATION",
+            help="Column heading for station names in data file")
+    parser.add_argument("--date_col", default="Date",
+            help="Column heading for dates in data file")
+    parser.add_argument("--min_air_temp_col", default="MinOfTEMP_A_F",
+            help="Column heading for min air temperatures in data file")
+    parser.add_argument("--max_air_temp_col", default="MaxOfTEMP_A_F",
+            help="Column heading for max air temperatures in data file")
     parser.add_argument('-q', "--quiet", action='count', default=0,
             help="Decrease verbosity")
     parser.add_argument('-v', "--verbose", action='count', default=0,
@@ -132,17 +149,24 @@ def main_process(args):
     max_num_years_to_norm = args.max_num_years_to_norm
     norm_method = args.norm_method.lower().strip()
     num_years_to_add_for_projection = args.num_years_to_add_for_projection
+    skiprows = args.skiprows
+    station_col = args.station_col
+    date_col = args.date_col
+    min_air_temp_col = args.min_air_temp_col
+    max_air_temp_col = args.max_air_temp_col
 
     df = pd.read_excel(fn, skiprows=[0])
     if df is None:
         logging.critical("Failed to load temperatures file '{}'".format(fn))
         return 1
-    df = df.loc[df['STATION'] == station]
-    df.set_index(['Date'], verify_integrity=True, inplace=True)
+    df.rename(columns={date_col:'date',
+                       station_col:'station',
+                       min_air_temp_col:'minAT',
+                       max_air_temp_col:'maxAT'}, inplace=True)
+    df = df.loc[df['station'] == station]
+    df.set_index(['date'], verify_integrity=True, inplace=True)
     df.sort_index(inplace=True)
     df = df.resample('D').mean() # ensure daily frequency
-    data_start = df.index[0]
-    data_end = df.index[-1]
 
     ## fill missing data with interpolation ##
     missing_days = df.index[df.isna().any(axis=1)]
@@ -154,6 +178,9 @@ def main_process(args):
         rt = t.rolling(interp_window, center=True).mean().interpolate(method='linear')
         t.loc[missing_days] = rt.loc[missing_days]
         t = t.interpolate(method='linear') # fill in any remaining missing values
+    t['filled'] = False
+    t.loc[missing_days, 'filled'] = True
+    t['normN'] = 0 # keeps track of number of values used to compute normal projections
 
     ## compute normal temperatures for projection ##
     if max_num_years_to_norm > 0:
@@ -164,13 +191,10 @@ def main_process(args):
         logging.warn("Not enough data to compute normal using requested"
                      " {:d} years.".format(max_num_years_to_norm))
         norm_start= t.index[0]
-
     logging.info("Computing normal using data from {} to {}".format(norm_start, t.index[-1]))
-
+    # actual norm computation
     tmp = t.loc[norm_start:]
     gb = tmp.groupby([tmp.index.month, tmp.index.day])
-    norm_cnts = gb.count()
-
     if norm_method == 'mean':
         norm = gb.mean()
     elif norm_method == 'median':
@@ -178,10 +202,11 @@ def main_process(args):
     else:
         logging.critical("norm_method '{}' not understood".format(norm_method))
         return 1
+    norm['normN'] = gb.count()['minAT']
     if (2,29) in norm.index: # drop Feb 29 if it is in there
         norm.drop((2,29))
     norm.sort_index(inplace=True)
-    ## make dataframe of multiple normal years
+    # extend data with multiple years of normals
     lnorm = None
     for yr in np.arange(0,num_years_to_add_for_projection)+t.index[-1].year:
         idx = pd.date_range(start='{:04d}-{:02d}-{:02d}'.format(yr,*norm.index[0]),
@@ -197,22 +222,19 @@ def main_process(args):
             lnorm = pd.concat((lnorm, tmp), axis=0)
         lnorm.resample('D').mean()
         lnorm.interpolate(method='linear') # fill in any 02-29
+    t = pd.concat((t, lnorm.loc[t.index[-1]+pd.DateOffset(days=1):]))
 
-    t = pd.concat((t, lnorm.loc[t.index[-1]:]))
-
-
-    # data_start
-    # data_end
-    # norm_start
-
-    fig = plt.figure(figsize=(10,8))
-    ax = fig.add_subplot(2,1,1)
-    ax.plot(df.index, df['MinOfTEMP_A_F'], ls='none', marker='o', label='input')
-    ax.plot(t.index, t['MinOfTEMP_A_F'], marker='.', label='interpolated')
-    ax.legend()
-    ax2 = fig.add_subplot(2,1,2)
-    ax2.plot(norm_cnts['MinOfTEMP_A_F'].values)
-    plt.show()
+    if True:
+        fig = plt.figure(figsize=(10,12))
+        ax = fig.add_subplot(3,1,1)
+        ax.plot(df.index, df['minAT'], ls='none', marker='o', label='input')
+        ax.plot(t.index, t['minAT'], marker='.', label='interpolated')
+        ax.legend()
+        ax2 = fig.add_subplot(3,1,2, sharex=ax)
+        ax2.plot(t.index, t['normN'])
+        ax3 = fig.add_subplot(3,1,3, sharex=ax)
+        ax3.plot(t.index, t['filled'])
+        plt.show()
 
 
     return 0
