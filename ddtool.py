@@ -34,19 +34,25 @@ logging.getLogger().setLevel(logging.INFO)
 INLINE_DEFAULT_CFG_FILE = """
 # test configuration file
 
-temperatures_file: testfiles/Temp_20001.xlsx
+#temperatures_file: testfiles/Temp_20001.xlsx
+temperatures_file: testfiles/LAAR_CountryClub2000-2018_Temps.xlsx
 
-station: Chino Hills
+station: Country Club
 
-max_num_years_to_norm: 3
+min_points_per_day: 4 # exclude days with too few temperature reads/points
+max_num_years_to_norm: 6
 norm_method: median # use either 'mean' or 'median' for normal/typical temperatures
-num_years_to_add_for_projection: 3
+num_years_to_add_for_projection: 2
 
-skiprows: 1
+skiprows: 0
 station_col: STATION
-date_col: Date
-min_air_temp_col: MinOfTEMP_A_F
-max_air_temp_col: MaxOfTEMP_A_F
+date_col: DATE
+time_col: TIME
+air_temp_col: TEMP_A_F
+
+#date_col: Date
+#min_air_temp_col: MinOfTEMP_A_F
+#max_air_temp_col: MaxOfTEMP_A_F
 
 """
 
@@ -73,6 +79,7 @@ def main(argv):
         # special handling of paratmeters that need it like lists
         for k in ['max_num_years_to_norm',
                   'num_years_to_add_for_projection',
+                  'min_points_per_day',
                   'skiprows']:
             if k in defaults:
                 defaults[k] = int(defaults[k])
@@ -94,6 +101,8 @@ def main(argv):
             help="File containing the daily min & max temperature data for all sites")
     parser.add_argument("-s","--station", default=None,
             help="Name of temperature station")
+    parser.add_argument("--min-points-per-day", type=int, default=4,
+            help="Exclude days with fewer temperature values from min & max calculation")
     parser.add_argument("--max-num-years-to-norm", type=int, default=0,
             help="Maximun number of years to use for normal temperature calculation. "
                 "Default (0) uses all available data")
@@ -101,14 +110,14 @@ def main(argv):
             help="Number of years of normal temperatures to generate for projection")
     parser.add_argument("--skiprows", type=int, default=1,
             help="Number of initial rows to skip of input temperature data file")
-    parser.add_argument("--station_col", default="STATION",
+    parser.add_argument("--station-col", default="STATION",
             help="Column heading for station names in data file")
-    parser.add_argument("--date_col", default="Date",
+    parser.add_argument("--date-col", default="DATE",
             help="Column heading for dates in data file")
-    parser.add_argument("--min_air_temp_col", default="MinOfTEMP_A_F",
-            help="Column heading for min air temperatures in data file")
-    parser.add_argument("--max_air_temp_col", default="MaxOfTEMP_A_F",
-            help="Column heading for max air temperatures in data file")
+    parser.add_argument("--time-col", default="TIME",
+            help="Column heading for time in data file")
+    parser.add_argument("--air-temp-col", default="TEMP_A_F",
+            help="Column heading for air temperatures in data file")
     parser.add_argument('-q', "--quiet", action='count', default=0,
             help="Decrease verbosity")
     parser.add_argument('-v', "--verbose", action='count', default=0,
@@ -140,9 +149,74 @@ def main(argv):
 
 
 #######
+
 def main_process(args):
     print("main process")
+    t = load_temperature_data(args)
 
+    ## Plot
+    if True:
+        fig = plt.figure(figsize=(10,16))
+        ax = fig.add_subplot(4,1,1)
+        ax.fill_between(t.index, t['minAT'], t['maxAT'], facecolor='k', edgecolor='none', alpha=0.25)
+        tmp = t.loc[(t['filled'] == 0) & (t['normN'] == 0)]
+        ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='input', color='C0')
+        ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C0')
+        tmp = t.loc[(t['filled'] > 0) & (t['normN'] == 0)]
+        ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='interpolated', color='C1')
+        ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C1')
+        tmp = t.loc[t['normN'] > 0]
+        ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='projected', color='C2')
+        ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C2')
+        #ax.plot(df['datetime'], df['AT'], ls='-', marker='.', label='', color='C3', alpha=0.5)
+        ax.legend(loc='upper right')
+        ax2 = fig.add_subplot(4,1,2, sharex=ax)
+        ax2.plot(t.index, t['normN'])
+        ax3 = fig.add_subplot(4,1,3, sharex=ax)
+        ax3.plot(t.index, t['filled'])
+        ax4 = fig.add_subplot(4,1,4, sharex=ax)
+        ax4.plot(t.index, t['cntAT'])
+        plt.show()
+    if False:
+        fig = plt.figure(figsize=(10,12))
+        ax = fig.add_subplot(3,1,1)
+        #ax.fill_between(t.index, t['minAT'], t['maxAT'], facecolor='k', edgecolor='none', alpha=0.25)
+
+        t1 = t.copy(deep=True)
+        t1 = t1.loc[t1['normN'] == 0]
+
+
+        ax.fill_between(tmp.index, tmp['minAT'], tmp['maxAT'], where=tmp['filled']==0,
+                        step='post', facecolor='C0', edgecolor='C0', alpha=0.25)
+        ax.fill_between(tmp.index, tmp['minAT'], tmp['maxAT'], where=tmp['filled']!=0,
+                        step='post', facecolor='C1', edgecolor='C1', alpha=0.25)
+        print(t.loc['2017-07-06'])
+        print(tmp.loc['2017-07-06'])
+        print(t.loc['2017-07-07'])
+        print(tmp.loc['2017-07-07'])
+
+        #tmp = t.copy(deep=True)
+        #tmp.loc[(tmp['filled'] == 0) | (tmp['normN'] != 0)] = np.nan
+        #ax.fill_between(tmp.index, tmp['minAT'], tmp['maxAT'],
+        #                step='pre', facecolor='C1', edgecolor='C1', alpha=0.25)
+
+        #ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='input', color='C0')
+        #ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C0')
+        #tmp = t.loc[(t['filled'] > 0) & (t['normN'] == 0)]
+        #ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='interpolated', color='C1')
+        #ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C1')
+        #tmp = t.loc[t['normN'] > 0]
+        #ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='projected', color='C2')
+        #ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C2')
+        ax.legend(loc='upper right')
+        ax2 = fig.add_subplot(3,1,2, sharex=ax)
+        ax2.plot(t.index, t['normN'])
+        ax3 = fig.add_subplot(3,1,3, sharex=ax)
+        ax3.plot(t.index, t['filled'])
+        plt.show()
+
+
+def load_temperature_data(args):
     fn = args.temperatures_file
     station = args.station
     interp_window = 3
@@ -152,37 +226,48 @@ def main_process(args):
     skiprows = args.skiprows
     station_col = args.station_col
     date_col = args.date_col
-    min_air_temp_col = args.min_air_temp_col
-    max_air_temp_col = args.max_air_temp_col
+    time_col = args.time_col
+    air_temp_col = args.air_temp_col
+    min_points_per_day = args.min_points_per_day
 
-    df = pd.read_excel(fn, skiprows=[0])
+    df = pd.read_excel(fn, skiprows=skiprows)#, parse_dates=[[date_col, time_col]])
     if df is None:
         logging.critical("Failed to load temperatures file '{}'".format(fn))
         return 1
     df.rename(columns={date_col:'date',
+                       time_col:'time',
                        station_col:'station',
-                       min_air_temp_col:'minAT',
-                       max_air_temp_col:'maxAT'}, inplace=True)
+                       air_temp_col:'AT'}, inplace=True)
     df = df.loc[df['station'] == station]
-    df.set_index(['date'], verify_integrity=True, inplace=True)
-    df.sort_index(inplace=True)
-    df = df.resample('D').mean() # ensure daily frequency
+    df['datetime'] = df.apply(lambda r : pd.datetime.combine(r['date'],r['time']),1)
+    print(df.head())
+
+    # min and max AT
+    gb = df[['date','AT']].groupby('date')
+    mmdf = gb.count()
+    mmdf.columns = ['cntAT']
+    mmdf['minAT'] = gb.min()
+    mmdf['maxAT'] = gb.max()
+    mmdf.loc[mmdf['cntAT'] < min_points_per_day, ['minAT','maxAT']] = np.nan
+    mmdf = mmdf.resample('D').mean() # ensure daily frequency
+    del df
+    print("Total days:", mmdf.shape[0])
 
     ## fill missing data with interpolation ##
-    missing_days = df.index[df.isna().any(axis=1)]
-    print("Missing days:", missing_days)
+    missing_days = mmdf.index[mmdf.isna().any(axis=1)]
+    print("Missing days:", len(missing_days), missing_days)
     if interp_window <= 1: # simple linear interpolation
-        t = df.interpolate(method='linear')
+        t = mmdf.interpolate(method='linear')
     else: # interpolation based on smoothed / rolling mean values
-        t = df.copy()
+        t = mmdf.copy()
         rt = t.rolling(interp_window, center=True).mean().interpolate(method='linear')
         t.loc[missing_days] = rt.loc[missing_days]
         t = t.interpolate(method='linear') # fill in any remaining missing values
     t['filled'] = False
     t.loc[missing_days, 'filled'] = True
-    t['normN'] = 0 # keeps track of number of values used to compute normal projections
 
     ## compute normal temperatures for projection ##
+    t['normN'] = 0 # keeps track of number of values used to compute normal projections
     if max_num_years_to_norm > 0:
         norm_start = t.index[-1]-pd.DateOffset(years=max_num_years_to_norm)+pd.DateOffset(days=1)
     else: # use all data
@@ -204,17 +289,19 @@ def main_process(args):
         return 1
     norm['normN'] = gb.count()['minAT']
     if (2,29) in norm.index: # drop Feb 29 if it is in there
-        norm.drop((2,29))
+        norm.drop((2,29), inplace=True)
     norm.sort_index(inplace=True)
     # extend data with multiple years of normals
     lnorm = None
-    for yr in np.arange(0,num_years_to_add_for_projection)+t.index[-1].year:
+    for yr in np.arange(0,num_years_to_add_for_projection+1)+t.index[-1].year:
         idx = pd.date_range(start='{:04d}-{:02d}-{:02d}'.format(yr,*norm.index[0]),
                             end=  '{:04d}-{:02d}-{:02d}'.format(yr,*norm.index[-1]),
                             freq='D')
         if idx.shape[0] == 366: # leapyear
             idx = idx[(idx.month!=2) | (idx.day!=29)]
         tmp = norm.copy()
+        print(idx.shape)
+        print(tmp.shape)
         tmp.index = idx
         if lnorm is None:
             lnorm = tmp
@@ -222,22 +309,9 @@ def main_process(args):
             lnorm = pd.concat((lnorm, tmp), axis=0)
         lnorm.resample('D').mean()
         lnorm.interpolate(method='linear') # fill in any 02-29
-    t = pd.concat((t, lnorm.loc[t.index[-1]+pd.DateOffset(days=1):]))
-
-    if True:
-        fig = plt.figure(figsize=(10,12))
-        ax = fig.add_subplot(3,1,1)
-        ax.plot(df.index, df['minAT'], ls='none', marker='o', label='input')
-        ax.plot(t.index, t['minAT'], marker='.', label='interpolated')
-        ax.legend()
-        ax2 = fig.add_subplot(3,1,2, sharex=ax)
-        ax2.plot(t.index, t['normN'])
-        ax3 = fig.add_subplot(3,1,3, sharex=ax)
-        ax3.plot(t.index, t['filled'])
-        plt.show()
-
-
-    return 0
+    t = pd.concat((t, lnorm.loc[t.index[-1]+pd.DateOffset(days=1):
+                                t.index[-1]+pd.DateOffset(years=num_years_to_add_for_projection)]))
+    return t
 
 
 ## Main hook for running as script
