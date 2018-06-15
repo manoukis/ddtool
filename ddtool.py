@@ -39,6 +39,8 @@ temperatures_file: testfiles/LAAR_CountryClub2000-2018_Temps.xlsx
 
 station: Country Club
 
+base_temp: 54.3
+
 min_points_per_day: 4 # exclude days with too few temperature reads/points
 max_num_years_to_norm: 6
 norm_method: median # use either 'mean' or 'median' for normal/typical temperatures
@@ -83,6 +85,9 @@ def main(argv):
                   'skiprows']:
             if k in defaults:
                 defaults[k] = int(defaults[k])
+        for k in ['base_temp']:
+            if k in defaults:
+                defaults[k] = float(defaults[k])
         #defaults['overwrite'] = defaults['overwrite'].lower() in ['true', 'yes', 'y', '1']
         #if( 'files' in defaults ): # files needs to be a list
         #    defaults['files'] = [ x for x in defaults['files'].split('\n')
@@ -101,6 +106,8 @@ def main(argv):
             help="File containing the daily min & max temperature data for all sites")
     parser.add_argument("-s","--station", default=None,
             help="Name of temperature station")
+    parser.add_argument("--base-temp", type=float, default=None,
+            help="Base tempertaure threshold for degree-day computation")
     parser.add_argument("--min-points-per-day", type=int, default=4,
             help="Exclude days with fewer temperature values from min & max calculation")
     parser.add_argument("--max-num-years-to-norm", type=int, default=0,
@@ -154,10 +161,12 @@ def main_process(args):
     print("main process")
     t = load_temperature_data(args)
 
+    dd = compute_BMDD_Fs(t['minAT'], t['maxAT'], args.base_temp)
+
     ## Plot
     if True:
-        fig = plt.figure(figsize=(10,16))
-        ax = fig.add_subplot(4,1,1)
+        fig = plt.figure(figsize=(10,9))
+        ax = fig.add_subplot(3,1,1)
         ax.fill_between(t.index, t['minAT'], t['maxAT'], facecolor='k', edgecolor='none', alpha=0.25)
         tmp = t.loc[(t['filled'] == 0) & (t['normN'] == 0)]
         ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='input', color='C0')
@@ -170,12 +179,11 @@ def main_process(args):
         ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C2')
         #ax.plot(df['datetime'], df['AT'], ls='-', marker='.', label='', color='C3', alpha=0.5)
         ax.legend(loc='upper right')
-        ax2 = fig.add_subplot(4,1,2, sharex=ax)
-        ax2.plot(t.index, t['normN'])
-        ax3 = fig.add_subplot(4,1,3, sharex=ax)
-        ax3.plot(t.index, t['filled'])
-        ax4 = fig.add_subplot(4,1,4, sharex=ax)
-        ax4.plot(t.index, t['cntAT'])
+        ax2 = fig.add_subplot(3,1,2, sharex=ax)
+        ax2.plot(t.index, t['cntAT'])
+        ax3 = fig.add_subplot(3,1,3, sharex=ax)
+        ax3.plot(dd.index, dd['cDD'])
+        fig.tight_layout()
         plt.show()
     if False:
         fig = plt.figure(figsize=(10,12))
@@ -254,7 +262,7 @@ def load_temperature_data(args):
     print("Total days:", mmdf.shape[0])
 
     ## fill missing data with interpolation ##
-    missing_days = mmdf.index[mmdf.isna().any(axis=1)]
+    missing_days = mmdf.index[mmdf.isnull().any(axis=1)]
     print("Missing days:", len(missing_days), missing_days)
     if interp_window <= 1: # simple linear interpolation
         t = mmdf.interpolate(method='linear')
@@ -265,6 +273,7 @@ def load_temperature_data(args):
         t = t.interpolate(method='linear') # fill in any remaining missing values
     t['filled'] = False
     t.loc[missing_days, 'filled'] = True
+    t.loc[missing_days, 'cntAT'] = 0
 
     ## compute normal temperatures for projection ##
     t['normN'] = 0 # keeps track of number of values used to compute normal projections
@@ -314,6 +323,66 @@ def load_temperature_data(args):
     return t
 
 
+# Function which computes BM (single sine method) degree day generation from temperature data
+def compute_BMDD_Fs(tmin, tmax, base_temp):
+    # Used internally
+    def _compute_daily_BM_DD(mint, maxt, avet, base_temp):
+        """Use standard Baskerville-Ermin (single sine) degree-day method
+        to compute the degree-day values for each a single day.
+        """
+        if avet is None:
+            avet = (mint+maxt)/2.0 # simple midpoint (like in the refs)
+        dd = np.nan # value which we're computing
+        # Step 1: Adjust for observation time; not relevant
+        # Step 2: GDD = 0 if max < base (curve all below base)
+        if maxt < base_temp:
+            dd = 0
+        # Step 3: Calc mean temp for day; already done previously
+        # Step 4: min > base; then whole curve counts
+        elif mint >= base_temp:
+            dd = avet - base_temp
+        # Step 5: else use curve minus part below base
+        else:
+            W = (maxt-mint)/2.0
+            tmp = (base_temp-avet) / W
+            if tmp < -1:
+                print('WARNING: (base_temp-avet)/W = {} : should be [-1:1]'.format(tmp))
+                tmp = -1
+            if tmp > 1:
+                print('WARNING: (base_temp-avet)/W = {} : should be [-1:1]'.format(tmp))
+                tmp = 1
+            A = np.arcsin(tmp)
+            dd = ((W*np.cos(A))-((base_temp-avet)*((np.pi/2.0)-A)))/np.pi
+        return dd
+
+    # compute the degree-days for each day in the temperature input (from tmin and tmax vectors)
+    dd = pd.concat([tmin,tmax], axis=1)
+    dd.columns = ['tmin', 'tmax']
+    dd['DD'] = dd.apply(lambda x: _compute_daily_BM_DD(x[0], x[1], (x[0]+x[1])/2.0, base_temp), axis=1)
+    dd['cDD'] = dd['DD'].cumsum(skipna=False)
+
+    # compute the degree-days for each day in the temperature input (from a daily groupby)
+#     grp = t.groupby(pd.TimeGrouper('D'))
+#     dd = grp.agg(lambda x: _compute_daily_BM_DD(np.min(x), np.max(x), None, base_temp))
+#     dd.columns = ['DD']
+
+    # Find the point where cumulative sums of degree days cross the threshold
+    # cDD = dd['DD'].cumsum(skipna=True)
+    # for cumdd_threshold,label in [[1*dd_gen,'F1'], [2*dd_gen,'F2'], [3*dd_gen,'F3']]:
+        # dtmp = np.zeros(len(dd['DD']))*np.nan
+        # tmp = np.searchsorted(cDD, cDD+(cumdd_threshold)-dd['DD'], side='left').astype(float)
+        # tmp[tmp>=len(tmp)] = np.nan
+        # #dd[label+'_idx'] = tmp
+        # # convert those indexes into end times
+        # e = pd.Series(index=dd.index, dtype='datetime64[ns]')
+        # e[~np.isnan(tmp)] = dd.index[tmp[~np.isnan(tmp)].astype(int)]
+        # dd[label+'_end'] = e
+        # # and duration...
+        # dd[label] = (e-dd.index+pd.Timedelta(days=1)).apply(lambda x: np.nan if pd.isnull(x) else x.days)
+    return dd
+
+    
+    
 ## Main hook for running as script
 if __name__ == "__main__":
     sys.exit(main(argv=None))
