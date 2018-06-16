@@ -38,8 +38,11 @@ INLINE_DEFAULT_CFG_FILE = """
 temperatures_file: testfiles/LAAR_CountryClub2000-2018_Temps.xlsx
 
 station: Country Club
+start_date: 2018-01-01
 
 base_temp: 54.3
+DD_per_gen: 622
+num_gen: 3
 
 min_points_per_day: 4 # exclude days with too few temperature reads/points
 max_num_years_to_norm: 6
@@ -79,13 +82,15 @@ def main(argv):
         cfg.read_file(chain(("[DEFAULTS]",), args.cfg_file))
         defaults = dict(cfg.items("DEFAULTS"))
         # special handling of paratmeters that need it like lists
-        for k in ['max_num_years_to_norm',
+        for k in ['num_gen',
+                  'max_num_years_to_norm',
                   'num_years_to_add_for_projection',
                   'min_points_per_day',
                   'skiprows']:
             if k in defaults:
                 defaults[k] = int(defaults[k])
-        for k in ['base_temp']:
+        for k in ['base_temp',
+                  'DD_per_gen']:
             if k in defaults:
                 defaults[k] = float(defaults[k])
         #defaults['overwrite'] = defaults['overwrite'].lower() in ['true', 'yes', 'y', '1']
@@ -106,8 +111,14 @@ def main(argv):
             help="File containing the daily min & max temperature data for all sites")
     parser.add_argument("-s","--station", default=None,
             help="Name of temperature station")
+    parser.add_argument("--start-date", type=str, default=None,
+            help="Date (YYYY-MM-DD) to begin degree-day accumulation calculation")
     parser.add_argument("--base-temp", type=float, default=None,
             help="Base tempertaure threshold for degree-day computation")
+    parser.add_argument("--DD-per-gen", type=float, default=None,
+            help="Degree-days required for one generation of development")
+    parser.add_argument("--num-gen", type=int, default=3,
+            help="Number of generations of development to model")
     parser.add_argument("--min-points-per-day", type=int, default=4,
             help="Exclude days with fewer temperature values from min & max calculation")
     parser.add_argument("--max-num-years-to-norm", type=int, default=0,
@@ -137,6 +148,8 @@ def main(argv):
 
     if not args.station:
         parser.error("Must provide a station name")
+    if not args.start_date:
+        parser.error("Must provide a start-date")
 
     logging.getLogger().setLevel(logging.getLogger().getEffectiveLevel()+
                                  (10*(args.quiet-args.verbose-args.verbose_level)))
@@ -181,10 +194,73 @@ def main_process(args):
         ax.legend(loc='upper right')
         ax2 = fig.add_subplot(3,1,2, sharex=ax)
         ax2.plot(t.index, t['cntAT'])
-        ax3 = fig.add_subplot(3,1,3, sharex=ax)
-        ax3.plot(dd.index, dd['cDD'])
+
+        ## Main results figure ... spaehtti-like plot
+        ax = fig.add_subplot(3,1,3)
+
+        start_date = args.start_date
+        DD_per_gen = args.DD_per_gen
+        num_gen = args.num_gen
+
+        cDD = dd['DD'].cumsum(skipna=False)
+        start_dt = pd.to_datetime(start_date)
+        proj_start_dt = t[t['normN'] > 0].index[0] # first day of projection based on normals
+
+        # compute generation dates
+        startcDD = cDD.loc[start_date]
+        fdate = np.empty([num_gen+1], dtype=type(start_dt))
+        fdate[0] = start_dt
+        tmp = cDD-startcDD
+        for gen in range(1,num_gen+1):
+            fdate[gen] = cDD[tmp>DD_per_gen*gen].index[0]
+        print(fdate)
+
+        # previous years
+        lab = 'previous years'
+        for yr in np.arange(dd.index[0].year, start_dt.year):
+            sd = start_dt.replace(year=yr)
+            if not sd in dd.index:
+                print("No data for year {}; skipping".format(yr))
+                continue
+            tmp = cDD-cDD.loc[sd]
+            tmp = tmp.loc[sd:tmp[tmp>DD_per_gen*num_gen].index[0]]
+            ax.plot((tmp.index-sd).days, tmp, '-', c='k', alpha=0.25, label=lab, zorder=1)
+            lab = '' # only label first line
+
+        # from the given start_date
+        tmp = (cDD-startcDD).loc[fdate[0]:fdate[-1]]
+        proj_mask = tmp.index >= proj_start_dt
+        ax.plot((tmp[~proj_mask].index-start_dt).days, tmp[~proj_mask],
+                '-', c='b', lw=2, label=str(start_dt.date()))
+        ax.plot((tmp[proj_mask].index-start_dt).days, tmp[proj_mask],
+                '-', c='r', lw=2, label=str(start_dt.date())+" projection")
+
+        trans = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
+        trans2 = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        for i in range(num_gen):
+            y = DD_per_gen*(i+1)
+            ax.axhline(y=y, c='k', ls=':', alpha=0.5, lw=1)
+            ax.text(0, y, ' F{:d}'.format(i+1), transform=trans, ha='left', va='bottom')
+            x = (fdate[i+1]-fdate[0]).days
+            ax.stem([x], [y], linefmt='k:', markerfmt='none')
+            ax.text(x, 0, '{:d}'.format(int(x)), transform=trans2, ha='left', va='bottom')
+
+        # xlabel in days and MM-DD dates
+        def foo_formatter(x, pos):
+            tmp = start_dt+pd.Timedelta(days=x)
+            return "{:d}\n{:02d}-{:02d}".format(int(x), tmp.month, tmp.day)
+        ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(foo_formatter))
+
+        ax.set_xlabel('days after last fly detection / date (MM-DD)')
+        ax.set_ylabel('thermal accumulation [DD]')
+        ax.set_xlim(left=0)
+        ax.set_ylim(bottom=0)
+        ax.legend()
+
         fig.tight_layout()
         plt.show()
+
+
     if False:
         fig = plt.figure(figsize=(10,12))
         ax = fig.add_subplot(3,1,1)
@@ -359,30 +435,10 @@ def compute_BMDD_Fs(tmin, tmax, base_temp):
     dd = pd.concat([tmin,tmax], axis=1)
     dd.columns = ['tmin', 'tmax']
     dd['DD'] = dd.apply(lambda x: _compute_daily_BM_DD(x[0], x[1], (x[0]+x[1])/2.0, base_temp), axis=1)
-    dd['cDD'] = dd['DD'].cumsum(skipna=False)
-
-    # compute the degree-days for each day in the temperature input (from a daily groupby)
-#     grp = t.groupby(pd.TimeGrouper('D'))
-#     dd = grp.agg(lambda x: _compute_daily_BM_DD(np.min(x), np.max(x), None, base_temp))
-#     dd.columns = ['DD']
-
-    # Find the point where cumulative sums of degree days cross the threshold
-    # cDD = dd['DD'].cumsum(skipna=True)
-    # for cumdd_threshold,label in [[1*dd_gen,'F1'], [2*dd_gen,'F2'], [3*dd_gen,'F3']]:
-        # dtmp = np.zeros(len(dd['DD']))*np.nan
-        # tmp = np.searchsorted(cDD, cDD+(cumdd_threshold)-dd['DD'], side='left').astype(float)
-        # tmp[tmp>=len(tmp)] = np.nan
-        # #dd[label+'_idx'] = tmp
-        # # convert those indexes into end times
-        # e = pd.Series(index=dd.index, dtype='datetime64[ns]')
-        # e[~np.isnan(tmp)] = dd.index[tmp[~np.isnan(tmp)].astype(int)]
-        # dd[label+'_end'] = e
-        # # and duration...
-        # dd[label] = (e-dd.index+pd.Timedelta(days=1)).apply(lambda x: np.nan if pd.isnull(x) else x.days)
     return dd
 
-    
-    
+
+
 ## Main hook for running as script
 if __name__ == "__main__":
     sys.exit(main(argv=None))
