@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 import matplotlib as mpl
+mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 
 # setup logging
@@ -33,32 +34,27 @@ logging.getLogger().setLevel(logging.INFO)
 # The default configuration (as a string so we don't need an extra file)
 INLINE_DEFAULT_CFG_FILE = """
 # test configuration file
+# temperatures_file: testfiles/LAAR_CountryClub2000-2018_Temps.xlsx
 
-#temperatures_file: testfiles/Temp_20001.xlsx
-temperatures_file: testfiles/LAAR_CountryClub2000-2018_Temps.xlsx
+# station: Country Club
+# start_date: 2018-01-01
 
-station: Country Club
-start_date: 2018-01-01
+# base_temp: 54.3
+# DD_per_gen: 622
+# num_gen: 3
 
-base_temp: 54.3
-DD_per_gen: 622
-num_gen: 3
+# min_readings_per_day: 4 # exclude days with too few temperature reads/points
+# max_num_years_to_norm: 6
+# norm_method: median # use either 'mean' or 'median' for normal/typical temperatures
+# num_years_to_add_for_projection: 3
 
-min_points_per_day: 4 # exclude days with too few temperature reads/points
-max_num_years_to_norm: 6
-norm_method: median # use either 'mean' or 'median' for normal/typical temperatures
-num_years_to_add_for_projection: 2
+# skiprows: 0
+# station_col: STATION
+# date_col: DATE
+# time_col: TIME
+# air_temp_col: TEMP_A_F
 
-skiprows: 0
-station_col: STATION
-date_col: DATE
-time_col: TIME
-air_temp_col: TEMP_A_F
-
-#date_col: Date
-#min_air_temp_col: MinOfTEMP_A_F
-#max_air_temp_col: MaxOfTEMP_A_F
-
+# interactive: False
 """
 
 ###
@@ -67,7 +63,7 @@ def main(argv):
     conf_parser = argparse.ArgumentParser(description=__doc__,
                                           add_help=False)  # turn off help so later parse handles it
     inline_default_cfg_file = io.StringIO(INLINE_DEFAULT_CFG_FILE)
-    inline_default_cfg_file.name = 'inline_default_cfg_file' # needs to have a name for argparse to work with it
+    inline_default_cfg_file.name = 'INLINE DEFAULT CONFIG' # needs to have a name for argparse to work with it
     conf_parser.add_argument(dest='cfg_file', nargs='?', type=argparse.FileType('r'),
                              default=inline_default_cfg_file,
                              help="Config file specifiying options/parameters.\n"
@@ -82,26 +78,31 @@ def main(argv):
         cfg.read_file(chain(("[DEFAULTS]",), args.cfg_file))
         defaults = dict(cfg.items("DEFAULTS"))
         # special handling of paratmeters that need it like lists
-        for k in ['num_gen',
+        for k in ['num_gen', # ints
                   'max_num_years_to_norm',
                   'num_years_to_add_for_projection',
-                  'min_points_per_day',
+                  'min_readings_per_day',
                   'skiprows']:
             if k in defaults:
                 defaults[k] = int(defaults[k])
-        for k in ['base_temp',
+        for k in ['base_temp', # floats
                   'DD_per_gen']:
             if k in defaults:
                 defaults[k] = float(defaults[k])
-        #defaults['overwrite'] = defaults['overwrite'].lower() in ['true', 'yes', 'y', '1']
+        for k in ['interactive']: # booleans
+            if k in defaults:
+                defaults[k] = defaults[k].lower() in ['true', 'yes', 'y', '1']
         #if( 'files' in defaults ): # files needs to be a list
         #    defaults['files'] = [ x for x in defaults['files'].split('\n')
         #                        if x and x.strip() and not x.strip()[0] in ['#',';'] ]
     else:
         defaults = {}
 
-    if cfg_filename == 'inline_default_cfg_file':
-        print("Using default configuration")
+    if cfg_filename == 'INLINE DEFAULT CONFIG':
+        #print("Using default configuration")
+        # require a configuration file
+        print("Error: Must specify a configuration file", file=sys.stderr)
+        sys.exit(2)
     else:
         print("Using configuration file '{}'".format(cfg_filename))
 
@@ -119,14 +120,16 @@ def main(argv):
             help="Degree-days required for one generation of development")
     parser.add_argument("--num-gen", type=int, default=3,
             help="Number of generations of development to model")
-    parser.add_argument("--min-points-per-day", type=int, default=4,
+    parser.add_argument("--min-readings-per-day", type=int, default=4,
             help="Exclude days with fewer temperature values from min & max calculation")
-    parser.add_argument("--max-num-years-to-norm", type=int, default=0,
+    parser.add_argument("--max-num-years-to-norm", type=int, default=6,
             help="Maximun number of years to use for normal temperature calculation. "
-                "Default (0) uses all available data")
+                "'0' uses all available data")
+    parser.add_argument("--norm-method", default="median",
+            help="Use either 'mean' or 'median' to calculate normal/typical temperatures for projection")
     parser.add_argument("--num-years-to-add-for-projection", type=int, default=3,
             help="Number of years of normal temperatures to generate for projection")
-    parser.add_argument("--skiprows", type=int, default=1,
+    parser.add_argument("--skiprows", type=int, default=0,
             help="Number of initial rows to skip of input temperature data file")
     parser.add_argument("--station-col", default="STATION",
             help="Column heading for station names in data file")
@@ -136,6 +139,8 @@ def main(argv):
             help="Column heading for time in data file")
     parser.add_argument("--air-temp-col", default="TEMP_A_F",
             help="Column heading for air temperatures in data file")
+    parser.add_argument('-i', "--interactive", action='store_true', default=False,
+            help="Display interactive plots")
     parser.add_argument('-q', "--quiet", action='count', default=0,
             help="Decrease verbosity")
     parser.add_argument('-v', "--verbose", action='count', default=0,
@@ -145,20 +150,25 @@ def main(argv):
 
     parser.set_defaults(**defaults) # add the defaults read from the config file
     args = parser.parse_args(remaining_argv)
-
-    if not args.station:
-        parser.error("Must provide a station name")
-    if not args.start_date:
-        parser.error("Must provide a start-date")
-
+    vars(args).update({'cfg_filename':cfg_filename})
+    
+    # test for required arguments/parameters
+    for k in ['station',
+              'start_date',
+              'base_temp',
+              'DD_per_gen',
+             ]:
+        if not k in args or vars(args)[k] is None:
+            parser.error("Must specify '{}' parameter".format(k))
+        
     logging.getLogger().setLevel(logging.getLogger().getEffectiveLevel()+
                                  (10*(args.quiet-args.verbose-args.verbose_level)))
     # Startup output
-    start_time = time.time()
+    run_time = time.time()
     logging.info("Started @ {}".format(
-                        datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
+                        datetime.fromtimestamp(run_time).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
     logging.info("args="+str(args))
-
+    
     retval = main_process(args)
 
     # cleanup and exit
@@ -175,131 +185,225 @@ def main_process(args):
     t, norm_start = load_temperature_data(args)
 
     dd = compute_BMDD_Fs(t['minAT'], t['maxAT'], args.base_temp)
-
+    
     ## Plot
-    if True:
-        t = t.loc[norm_start:]
-        fig = plt.figure(figsize=(10,9))
-        ax = fig.add_subplot(3,1,1)
-        ax.fill_between(t.index, t['minAT'], t['maxAT'], facecolor='k', edgecolor='none', alpha=0.25)
-        tmp = t.loc[(t['filled'] == 0) & (t['normN'] == 0)]
-        ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='input', color='C0')
-        ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C0')
-        tmp = t.loc[(t['filled'] > 0) & (t['normN'] == 0)]
-        ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='interpolated', color='C1')
-        ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C1')
-        tmp = t.loc[t['normN'] > 0]
-        ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='projected', color='C2')
-        ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C2')
-        #ax.plot(df['datetime'], df['AT'], ls='-', marker='.', label='', color='C3', alpha=0.5)
-        ax.legend(loc='upper right')
-        ax2 = fig.add_subplot(3,1,2, sharex=ax)
-        ax2.plot(t.index, t['cntAT'])
+    
+    ## Main results figure ... spaehtti-like plot
+    fig = plt.figure(figsize=(7,4))
+    ax = fig.add_subplot(1,1,1)
 
-        ## Main results figure ... spaehtti-like plot
-        ax = fig.add_subplot(3,1,3)
+    start_date = args.start_date
+    DD_per_gen = args.DD_per_gen
+    num_gen = args.num_gen
 
-        start_date = args.start_date
-        DD_per_gen = args.DD_per_gen
-        num_gen = args.num_gen
+    cDD = dd['DD'].cumsum(skipna=False)
+    start_dt = pd.to_datetime(start_date)
+    proj_start_dt = t[t['normN'] > 0].index[0] # first day of projection based on normals
 
-        cDD = dd['DD'].cumsum(skipna=False)
-        start_dt = pd.to_datetime(start_date)
-        proj_start_dt = t[t['normN'] > 0].index[0] # first day of projection based on normals
+    # compute generation dates
+    startcDD = cDD.loc[start_date]
+    fdate = np.empty([num_gen+1], dtype=type(start_dt))
+    fdate[0] = start_dt
+    tmp = cDD-startcDD
+    for gen in range(1,num_gen+1):
+        fdate[gen] = cDD[tmp>DD_per_gen*gen].index[0]
+    max_plot_date = fdate[-1] # track maximum date used
+    print(fdate)
 
-        # compute generation dates
-        startcDD = cDD.loc[start_date]
-        fdate = np.empty([num_gen+1], dtype=type(start_dt))
-        fdate[0] = start_dt
-        tmp = cDD-startcDD
-        for gen in range(1,num_gen+1):
-            fdate[gen] = cDD[tmp>DD_per_gen*gen].index[0]
-        print(fdate)
+    # previous years
+    lab = 'previous years'
+    for yr in np.arange(dd.index[0].year, start_dt.year):
+        sd = start_dt.replace(year=yr)
+        if not sd in dd.index:
+            print("No data for year {}; skipping".format(yr))
+            continue
+        tmp = cDD-cDD.loc[sd]
+        tmp = tmp.loc[sd:tmp[tmp>DD_per_gen*num_gen].index[0]]
+        # @TCC -- could distinquish previous years used in normal from older years
+        c = 'k'
+        if sd < norm_start:
+            c = 'k'
+        ax.plot((tmp.index-sd).days, tmp, '-', c=c, alpha=0.25, label=lab, zorder=1)
+        lab = '' # only label first line
 
-        # previous years
-        lab = 'previous years'
-        for yr in np.arange(dd.index[0].year, start_dt.year):
-            sd = start_dt.replace(year=yr)
-            if not sd in dd.index:
-                print("No data for year {}; skipping".format(yr))
-                continue
-            tmp = cDD-cDD.loc[sd]
-            tmp = tmp.loc[sd:tmp[tmp>DD_per_gen*num_gen].index[0]]
-            ax.plot((tmp.index-sd).days, tmp, '-', c='k', alpha=0.25, label=lab, zorder=1)
-            lab = '' # only label first line
+    # from the given start_date
+    tmp = (cDD-startcDD).loc[fdate[0]:fdate[-1]]
+    proj_mask = tmp.index >= proj_start_dt
+    ax.plot((tmp[~proj_mask].index-start_dt).days, tmp[~proj_mask],
+            '-', c='b', lw=2, label=str(start_dt.date()))
+    ax.plot((tmp[proj_mask].index-start_dt).days, tmp[proj_mask],
+            '-', c='r', lw=2, label=str(start_dt.date())+" projection")
 
-        # from the given start_date
-        tmp = (cDD-startcDD).loc[fdate[0]:fdate[-1]]
-        proj_mask = tmp.index >= proj_start_dt
-        ax.plot((tmp[~proj_mask].index-start_dt).days, tmp[~proj_mask],
-                '-', c='b', lw=2, label=str(start_dt.date()))
-        ax.plot((tmp[proj_mask].index-start_dt).days, tmp[proj_mask],
-                '-', c='r', lw=2, label=str(start_dt.date())+" projection")
+    trans = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
+    trans2 = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+    for i in range(num_gen):
+        y = DD_per_gen*(i+1)
+        ax.axhline(y=y, c='k', ls=':', alpha=0.5, lw=1)
+        ax.text(0, y, ' F{:d}'.format(i+1), transform=trans, ha='left', va='bottom')
+        x = (fdate[i+1]-fdate[0]).days
+        ax.stem([x], [y], linefmt='k:', markerfmt='none')
+        ax.text(x, 0, '{:d}'.format(int(x)), transform=trans2, ha='left', va='bottom')
 
-        trans = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
-        trans2 = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
-        for i in range(num_gen):
-            y = DD_per_gen*(i+1)
-            ax.axhline(y=y, c='k', ls=':', alpha=0.5, lw=1)
-            ax.text(0, y, ' F{:d}'.format(i+1), transform=trans, ha='left', va='bottom')
-            x = (fdate[i+1]-fdate[0]).days
-            ax.stem([x], [y], linefmt='k:', markerfmt='none')
-            ax.text(x, 0, '{:d}'.format(int(x)), transform=trans2, ha='left', va='bottom')
+    # xlabel in days and MM-DD dates
+    def foo_formatter(x, pos):
+        tmp = start_dt+pd.Timedelta(days=x)
+        return "{:d}\n{:02d}-{:02d}".format(int(x), tmp.month, tmp.day)
+    ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(foo_formatter))
 
-        # xlabel in days and MM-DD dates
-        def foo_formatter(x, pos):
-            tmp = start_dt+pd.Timedelta(days=x)
-            return "{:d}\n{:02d}-{:02d}".format(int(x), tmp.month, tmp.day)
-        ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(foo_formatter))
+    ax.set_xlabel('days after last fly detection / date (MM-DD)')
+    ax.set_ylabel('thermal accumulation [degree-days]')
+    ax.set_xlim(left=0)
+    ax.set_ylim(bottom=0)
+    ax.legend()
+    fig.tight_layout()    
+    
+    # save figure to memory (optionally show)
+    figio = io.BytesIO()
+    fig.savefig(figio, format="svg", bbox_inches='tight')
+    main_fig_str = b'<svg' + figio.getvalue().split(b'<svg')[1]
+    del figio
+    if args.interactive:
+        plt.show()
+    
+    ## Temperature plot
+    t2 = t.loc[norm_start:max_plot_date] # only show values actually used
 
-        ax.set_xlabel('days after last fly detection / date (MM-DD)')
-        ax.set_ylabel('thermal accumulation [DD]')
-        ax.set_xlim(left=0)
-        ax.set_ylim(bottom=0)
-        ax.legend()
+    fig = plt.figure(figsize=(7,4))
+    gs = mpl.gridspec.GridSpec(2, 1, height_ratios=[4,1])
+   
+    ax = fig.add_subplot(gs[0,0])
+    ax.fill_between(t2.index, t2['minAT'], t2['maxAT'], facecolor='k', edgecolor='none', alpha=0.25)
+    tmp = t2.loc[(t2['filled'] == 0) & (t2['normN'] == 0)]
+    ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='input', color='C0')
+    ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C0')
+    tmp = t2.loc[(t2['filled'] > 0) & (t2['normN'] == 0)]
+    ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='interpolated', color='C1')
+    ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C1')
+    tmp = t2.loc[t2['normN'] > 0]
+    ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='projected', color='C2')
+    ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C2')
+  
+    ax.axvline(x=pd.to_datetime(args.start_date), c='C4', label="start date", alpha=0.5)
+    ldg = ax.legend(loc='lower left', ncol=4, bbox_to_anchor=(0,1))
+    ax.set_ylabel("temperature")
+    
+    ax2 = fig.add_subplot(gs[1,0], sharex=ax)
+    ax2.plot(t2.index, t2['cntAT'])
+    ax2.set_ylabel("# readings\nper day")
+    ax2.set_xlabel("date")
+    ax2.set_xlim(left=t2.index[0])
+    fig.tight_layout()    
 
-        fig.tight_layout()
+    # save figure to memory (optionally show)
+    figio = io.BytesIO()
+    fig.savefig(figio, format="svg", bbox_extra_artists=(ldg,), bbox_inches='tight')
+    t_fig_str = b'<svg' + figio.getvalue().split(b'<svg')[1]
+    del figio
+    if args.interactive:
         plt.show()
 
+    # computed variables for output
+    latest_temp_datetime = t.loc[(t['filled'] == 0) & (t['normN'] == 0)].index[-1]
+    
+    # output html
+    outfilename = "{} {} {}.html".format(args.station, args.start_date, 
+                  datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d"))#T%H:%M:%S.%f%z"))
+    logging.info("Saving to: '{}'".format(outfilename))
+    
+    # header boilerplate
+    with open(outfilename, 'w') as fh:
+        tmp = """<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'>
+  <title>{station} {start_date}</title>
+</head>
+<body>
+<h1>Thermal accumulation projections for {station} starting on {start_date}</h1>
+<small>Generated at {run_time_str}</small>
 
-    if False:
-        fig = plt.figure(figsize=(10,12))
-        ax = fig.add_subplot(3,1,1)
-        #ax.fill_between(t.index, t['minAT'], t['maxAT'], facecolor='k', edgecolor='none', alpha=0.25)
+<h3> Model </h3>
+<ul style='list-style-type:none'>
+<li> Single-sine degree day
+<li> Base Temperature : {base_temp}
+<li> Degree-days per generation : {DD_per_gen}
+</ul>
 
-        t1 = t.copy(deep=True)
-        t1 = t1.loc[t1['normN'] == 0]
+<h3> Temperature data available </h3>
+<ul style='list-style-type:none'>
+<li> Station : {station}
+<li> Lastest temperatre date : {latest_temp_date}
+<li> Earliest temperature date : {earliest_temp_date}
+<li> Input filename : {temperatures_file}
+</ul>
 
+<h3> Results </h3>
+<ul style='list-style-type:none'>
+<li> start : {start_date}
+""".format(station=args.station,
+           start_date=args.start_date,
+           run_time_str=datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z"),
+           base_temp=args.base_temp,
+           DD_per_gen=args.DD_per_gen,
+           latest_temp_date=latest_temp_datetime.date(),
+           earliest_temp_date=t.index[0].date(),
+           temperatures_file=args.temperatures_file)
+        print(tmp, file=fh)
+        for i in range(len(fdate)-1):
+            print("<li> generation {} : {}  ({} days past start)".format(i+1,
+                    fdate[i+1].date(), (fdate[i+1]-fdate[0]).days), file=fh)
+            if fdate[i+1] <= latest_temp_datetime:
+                print("<span style='color:green'> passed </span>", file=fh)
+            else:
+                print("<span style='color:red'> projection </span>", file=fh)
+        print("</ul>", file=fh)        
+        
+    with open(outfilename, 'ab') as fh:
+        fh.write(main_fig_str)
 
-        ax.fill_between(tmp.index, tmp['minAT'], tmp['maxAT'], where=tmp['filled']==0,
-                        step='post', facecolor='C0', edgecolor='C0', alpha=0.25)
-        ax.fill_between(tmp.index, tmp['minAT'], tmp['maxAT'], where=tmp['filled']!=0,
-                        step='post', facecolor='C1', edgecolor='C1', alpha=0.25)
-        print(t.loc['2017-07-06'])
-        print(tmp.loc['2017-07-06'])
-        print(t.loc['2017-07-07'])
-        print(tmp.loc['2017-07-07'])
+    with open(outfilename, 'a') as fh:
+        print("<h3>Temperature values used for normals and current projection</h3>", file=fh)  
+    with open(outfilename, 'ab') as fh:
+        fh.write(t_fig_str)
 
-        #tmp = t.copy(deep=True)
-        #tmp.loc[(tmp['filled'] == 0) | (tmp['normN'] != 0)] = np.nan
-        #ax.fill_between(tmp.index, tmp['minAT'], tmp['maxAT'],
-        #                step='pre', facecolor='C1', edgecolor='C1', alpha=0.25)
+    with open(outfilename, 'a') as fh:
+        tmp = """
+<h3> Configuration used </h3>
+configuration filename : {cfg_filename}
 
-        #ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='input', color='C0')
-        #ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C0')
-        #tmp = t.loc[(t['filled'] > 0) & (t['normN'] == 0)]
-        #ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='interpolated', color='C1')
-        #ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C1')
-        #tmp = t.loc[t['normN'] > 0]
-        #ax.plot(tmp.index, tmp['minAT'], ls='none', marker='.', label='projected', color='C2')
-        #ax.plot(tmp.index, tmp['maxAT'], ls='none', marker='.', label='', color='C2')
-        ax.legend(loc='upper right')
-        ax2 = fig.add_subplot(3,1,2, sharex=ax)
-        ax2.plot(t.index, t['normN'])
-        ax3 = fig.add_subplot(3,1,3, sharex=ax)
-        ax3.plot(t.index, t['filled'])
-        plt.show()
+<pre style="white-space: pre-wrap;">
+temperatures_file: {temperatures_file}
+station: {station}
+start_date: {start_date}
 
+base_temp: {base_temp}
+DD_per_gen: {DD_per_gen}
+num_gen: {num_gen}
+
+min_readings_per_day: {min_readings_per_day}
+max_num_years_to_norm: {max_num_years_to_norm}
+norm_method: {norm_method}
+num_years_to_add_for_projection: {num_years_to_add_for_projection}
+
+skiprows: {skiprows}
+station_col: {station_col}
+date_col: {date_col}
+time_col: {time_col}
+air_temp_col: {air_temp_col}
+
+interactive: {interactive}
+</pre>
+</body>
+</html>""".format(**vars(args))
+        print(tmp, file=fh)
+
+# min_readings_per_day: 4 # exclude days with too few temperature reads/points
+# max_num_years_to_norm: 6
+# norm_method: median # use either 'mean' or 'median' for normal/typical temperatures
+# num_years_to_add_for_projection: 3
+        
+    # done
+    return 0
 
 def load_temperature_data(args):
     fn = args.temperatures_file
@@ -313,7 +417,7 @@ def load_temperature_data(args):
     date_col = args.date_col
     time_col = args.time_col
     air_temp_col = args.air_temp_col
-    min_points_per_day = args.min_points_per_day
+    min_readings_per_day = args.min_readings_per_day
 
     df = pd.read_excel(fn, skiprows=skiprows)#, parse_dates=[[date_col, time_col]])
     if df is None:
@@ -333,7 +437,7 @@ def load_temperature_data(args):
     mmdf.columns = ['cntAT']
     mmdf['minAT'] = gb.min()
     mmdf['maxAT'] = gb.max()
-    mmdf.loc[mmdf['cntAT'] < min_points_per_day, ['minAT','maxAT']] = np.nan
+    mmdf.loc[mmdf['cntAT'] < min_readings_per_day, ['minAT','maxAT']] = np.nan
     mmdf = mmdf.resample('D').mean() # ensure daily frequency
     del df
     print("Total days:", mmdf.shape[0])
@@ -386,8 +490,6 @@ def load_temperature_data(args):
         if idx.shape[0] == 366: # leapyear
             idx = idx[(idx.month!=2) | (idx.day!=29)]
         tmp = norm.copy()
-        print(idx.shape)
-        print(tmp.shape)
         tmp.index = idx
         if lnorm is None:
             lnorm = tmp
