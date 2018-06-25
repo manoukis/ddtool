@@ -487,7 +487,7 @@ def load_temperature_data(args):
     logging.info("Computing normal using data from {} to {}".format(norm_start, t.index[-1]))
     # actual norm computation
     tmp = t.loc[norm_start:]
-    gb = tmp.groupby([tmp.index.month.rename('_month'), tmp.index.day.rename('_day')])
+    gb = tmp.groupby([tmp.index.month, tmp.index.day])
     if norm_method == 'mean':
         norm = gb.mean()
     elif norm_method == 'median':
