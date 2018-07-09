@@ -2,6 +2,14 @@
 Simple thermal accumulation calcuation tool
 
 
+
+
+Uses matplotlib, pandas, and xlrd python packages
+'''
+conda install matplotlib pandas xlrd
+'''
+
+
 make single executable using pyinstaller
 pyinststaller can be installed via conda
 > pyinstaller -F ddtool.py
