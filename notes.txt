@@ -1,17 +1,7 @@
 ## Temperature input
 
 Temperature input will be, for now, dump from Access database.
-Apparently contains all data for all sites.
-example file: testfiles/Temps_20001.xlsx
-
-
-Write an additional tool to read old COPY12.BAS files like LAAR17 and output to an excel file.
 
 For future:
 Getting data directly out of the Access DB seems relatively simple.  
 We can probably automate going from sensor/hobo to files of min & max T and/or database.
-
-
-## Output/results
-
-Just dates of generations are required.  However, some additional info, especially plots, seems good.
