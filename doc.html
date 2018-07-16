@@ -15,8 +15,8 @@ Download the ddtool zip archive:<br>
 
 <p>
 Extract the contents of the zip archive to the location you want to run ddtool from.<br>
-'ddtool.cmd' must be kept in the directory immediately above the 'dist' directory,
-and nothing in 'dist' should be messed with.<br>
+<code>ddtool.cmd</code> must be kept in the directory immediately above the <code>ddtool_html</code> directory,
+and nothing in <code>ddtool_html</code> should be messed with.<br>
 The entire ddtool directory can be safely moved.
 
 <h2> Usage <h2>
@@ -24,7 +24,7 @@ The entire ddtool directory can be safely moved.
 <h3> Example </h3>
 An example is included in the zip archive in the 'examples' directory.
 <dl>
-    <dt> Country Club 2018-01-01.cfg
+    <dt> Country Club example.cfg
         <dd> Configuration file
         </dd>
     <dt> LAAR_CountryClub2000-2018_Temps.xlsx
@@ -32,8 +32,35 @@ An example is included in the zip archive in the 'examples' directory.
     <dt> Country Club 2018-01-01 2018-07-09.html
         <dd> Previoulsy generated output file<br>
         Running ddtool will produce a new file with a different date.
-         </dd>
+        </dd>
 </dl>
+
+<h4> Step 1: Prepare the temperature data </h4>
+
+The central input for ddtool is an Excel (<code>.xlsx</code>) file containing temperature readings.<br>
+<code>examples/LAAR_CountryClub2000-2018_Temps.xlsx</code> is an example.<br>
+The first row must be a header with the column names.
+After that, each row contains a reading at a particular time (as opposed to min, max, or average).<br>
+
+<h5> Required Columns:</h5>
+<div style="text-indent: 1em;">
+Extra columns are just ignored.
+Default column names are given in [], but can be changed in the <code>.cfg</code> file.
+<ul>
+<li> station [STATION] : A location name for the weather/temperature recording station
+<li> date [DATE] : The date of the reading
+<li> time [TIME] : The time of the reading
+<li> temperature [TEMP_A_F] : The air temperature value at that date and time
+</ul>
+</div>
+
+<h4> Step 2: Prepare the configuration (<code>.cfg</code>) file </h4>
+
+<b>IMPORTANT NOTE: Make sure the same units for temperature are used 
+in the temperatures file and <code>.cfg</code> file
+(for base_temp and DD_per_gen parameters).</b>
+ddtool has no way to know if the units don't match.
+
 
 
 </body>

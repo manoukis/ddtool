@@ -21,6 +21,9 @@ import matplotlib as mpl
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 
+import tkinter
+from tkinter.filedialog import asksaveasfilename
+
 # setup logging
 def getlvlnum(name):
     return name if isinstance(name, int) else logging.getLevelName(name)
@@ -112,6 +115,8 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__, parents=[conf_parser])
     parser.add_argument("-f","--temperatures_file", default=None,
             help="File containing the daily min & max temperature data for all sites")
+    parser.add_argument("-o","--out-file", default=None,
+            help="Filename to output results report to; Default is to ask")
     parser.add_argument("-s","--station", default=None,
             help="Name of temperature station")
     parser.add_argument("--start-date", type=str, default=None,
@@ -312,8 +317,22 @@ def main_process(args):
     latest_temp_datetime = t.loc[(t['filled'] == 0) & (t['normN'] == 0)].index[-1]
     
     # output html
-    outfilename = "{} {} {}.html".format(args.station, args.start_date, 
-                  datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d"))#T%H:%M:%S.%f%z"))
+    if not args.out_file:
+        tmp = "{} {} {}.html".format(args.station, args.start_date, 
+                      datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d"))#T%H:%M:%S.%f%z"))
+        outfilename = tkinter.filedialog.asksaveasfilename(initialdir=".",
+                title = "Save Report",
+                initialfile=tmp,
+                defaultextension=".html",
+                filetypes = (("html files","*.html"), ("all files","*.*")))
+        if not outfilename:
+            logging.critical("Save cancled")
+            sys.exit(0)
+    else:
+        outfilename = args.out_file
+    if not outfilename:
+        logging.error("Cannot save to: '{}'".format(outfilename))
+        sys.exit(1)
     logging.info("Saving to: '{}'".format(outfilename))
     
     # header boilerplate
