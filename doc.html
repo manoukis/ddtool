@@ -1,10 +1,16 @@
 <html>
 <head>
 <title> DDTool : Documentation </title>
+<style>
+h5,h6 {
+    margin-bottom: 0.25em;
+}
+</style>
+
 </head>
 
 <body>
-<h1> DDTool : Documentaiton </h1>
+<h1> DDTool : Documentation </h1>
 
 <h2> Installation (Windows) </h2>
 
@@ -30,7 +36,7 @@ An example is included in the zip archive in the 'examples' directory.
     <dt> LAAR_CountryClub2000-2018_Temps.xlsx
         <dd> Temperature data </dd>
     <dt> Country Club 2018-01-01 2018-07-09.html
-        <dd> Previoulsy generated output file<br>
+        <dd> Previously generated output file<br>
         Running ddtool will produce a new file with a different date.
         </dd>
 </dl>
@@ -46,7 +52,7 @@ After that, each row contains a reading at a particular time (as opposed to min,
 <div style="text-indent: 1em;">
 Extra columns are just ignored.
 Default column names are given in [], but can be changed in the <code>.cfg</code> file.
-<ul>
+<ul style="margin-top: 0em;">
 <li> station [STATION] : A location name for the weather/temperature recording station
 <li> date [DATE] : The date of the reading
 <li> time [TIME] : The time of the reading
@@ -55,6 +61,81 @@ Default column names are given in [], but can be changed in the <code>.cfg</code
 </div>
 
 <h4> Step 2: Prepare the configuration (<code>.cfg</code>) file </h4>
+
+The configuration file <code>examples/Country Club example.cfg</code>
+contains all the parameters and options to tell ddtool what to do.
+<p>
+The file format is simply a list of options and their values.
+Blank lines and comments beginning with '#' are ignored.
+
+<h5> Required Parameters:</h5>
+<div style="text-indent: 1em;">
+<dl style="margin-top: 0em;">
+	<dt> temperatures_file </dt>
+	<dd> The Excel file containing temperature data prepared in step 1. </dd>
+	<dt> station </dt>
+	<dd> The name of the weather/temperature station.
+	ddtool will only use rows from the tempertaures_file where the station exactly matches.</dd>
+	<dt> start_date </dt>
+	<dd> The date (YYYY-MM-DD format) to start the calculation from.
+		This is often the last fly find date.</dd>
+	<dt> base_temp </dt>
+	<dd> The base temperature below which there is negligible development for the thermal development model. 
+		<b>Must be the same units as temperature in the temperatures_file.</b></dd>
+	<dt> DD_per_gen </dt>
+	<dd> The number of degree days required for one generation of development. 
+		<b>Units must correspond to temperature in the <code>temperatures_file</code>.</b></dd>
+</dl>
+</div>
+
+<h5> Optional Parameters: (Will use default value if omitted or commented out with a '#')</h5>
+<div style="text-indent: 1em;">
+<dl style="margin-top: 0em;">
+	<dt> num_gen : default is 3 <dt>
+	<dd> The number of generations of thermal accumulation to model and/or project. </dd>
+	<dt> &nbsp; </dt><dd></dd>
+	<dt> min_readings_per_day : default is 4 </dt>
+	<dd> Days with less than this number of temperature readings will be
+		treated as missing data, so min and max temperatures will be estimated by interpolation.</dd>
+	<dt> interpolation_window : default is 3</dt>
+	<dd> Min and max temperature data is smoothed by a running mean with this window size
+		before missing values are filled via linear interpolation. </dd>
+	<dt> max_num_years_to_norm : default is 6</dt>
+	<dd> Use at most this many years of temperature data from the <code>temperature_file</code>
+		(starting from start_date and working backwards) to compute
+		daily normals for projecting past the end of the data.</dd>
+	<dt> norm_method : default is <code>median</code></dt>
+	<dd> Compute min and max temperature normals for projecting forward by 
+		either taking the <code>mean</code> or the <code>median</code>
+		of the values for the same month+day across previous years.
+		<code>median</code> is less sensitive to outliers, but <code>mean</code> (average) is more familiar.</dd>
+	<dt> num_years_to_add_for_projection : default is 3</dt>
+	<dd> The number of years of temperatures to generate (based on normal min and max temperatures)
+		for projections.
+		You may need to increase this number if projecting for many generations and/or very slow development. </dd>
+	<dt> &nbsp; </dt><dd></dd>
+	<dt> skiprows : default is 0 </dt>
+	<dd> The number of rows in the <code>temperatures_file</code> before the header line. </dd>
+	<dt> station_col : default is <code>STATION</code> </dt>
+	<dd> The column heading for the station column in the <code>temperatures_file</code> </dd>
+	<dt> date_col : default is <code>DATE</code> </dt>
+	<dd> The column heading for the date column in the <code>temperatures_file</code> </dd>
+	<dt> time_col : default is <code>TIME</code> </dt>
+	<dd> The column heading for the time column in the <code>temperatures_file</code> </dd>
+	<dt> air_temp_col : default is <code>TEMP_A_F</code> </dt>
+	<dd> The column heading for the air temperature column in the <code>temperatures_file</code> </dd>
+	<dt> &nbsp; </dt><dd></dd>
+	<dt> out_file </dt>
+	<dd> If set, ddtool will output report to the given
+		filename instead of opening the 'Save As' dialog. </dd>
+	<dt> interactive </dt>
+	<dd> If set to <code>True</code>, ddtool will open the figures in interactive windows
+		allowing zoom, pan, ect. </dd>
+</dl>
+</div>
+
+
+
 
 <b>IMPORTANT NOTE: Make sure the same units for temperature are used 
 in the temperatures file and <code>.cfg</code> file
