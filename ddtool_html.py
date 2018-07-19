@@ -13,6 +13,7 @@ import dateutil
 import logging
 import io
 import glob
+import subprocess
 
 import numpy as np
 import pandas as pd
@@ -21,8 +22,8 @@ import matplotlib as mpl
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 
-import tkinter
-from tkinter.filedialog import asksaveasfilename
+import tkinter as tk
+import tkinter.filedialog
 
 # setup logging
 def getlvlnum(name):
@@ -160,7 +161,7 @@ def main(argv):
     parser.set_defaults(**defaults) # add the defaults read from the config file
     args = parser.parse_args(remaining_argv)
     vars(args).update({'cfg_filename':cfg_filename})
-    
+
     # test for required arguments/parameters
     for k in ['station',
               'start_date',
@@ -169,7 +170,7 @@ def main(argv):
              ]:
         if not k in args or vars(args)[k] is None:
             parser.error("Must specify '{}' parameter".format(k))
-        
+
     logging.getLogger().setLevel(logging.getLogger().getEffectiveLevel()+
                                  (10*(args.quiet-args.verbose-args.verbose_level)))
     # Startup output
@@ -177,7 +178,7 @@ def main(argv):
     logging.info("Started @ {}".format(
                         datetime.fromtimestamp(run_time).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
     logging.info("args="+str(args))
-    
+
     retval = main_process(args)
 
     # cleanup and exit
@@ -191,12 +192,42 @@ def main(argv):
 
 def main_process(args):
     print("main process")
-    t, norm_start = load_temperature_data(args)
 
+    tkroot = tk.Tk()
+    tkroot.title("DDTool")
+    #tkroot.withdraw()
+    tktext = tk.Text(master=tkroot)
+    tktext.pack(side=tk.RIGHT)
+
+    tktext.insert(tk.END, "DDTool:\n\n")
+    tktext.insert(tk.END, "Started at {}\n".format(time.strftime("%Y-%m-%d %T %z")))
+    tktext.insert(tk.END, "Using configuration file '{}'\n".format(args.cfg_filename))
+    tktext.see(tk.END) # scroll if needed
+    tkroot.update()
+
+    if args.temperatures_file:
+        temperatures_filename = args.temperatures_file
+    else:
+        temperatures_filename = tk.filedialog.askopenfilename(initialdir=".",
+                title = "Select Temperatures File",
+                defaultextension=".xlsx",
+                filetypes = (("Excel files",("*.xlsx","*.xls")), ("all files","*.*")))
+        if not temperatures_filename:
+            logging.critical("Select Temperatures File cancled")
+            sys.exit(0)
+
+    tktext.insert(tk.END, "Loading temperatures file '{}'\n".format(temperatures_filename))
+    tktext.see(tk.END) # scroll if needed
+    tkroot.update()
+    t, norm_start = load_temperature_data(temperatures_filename, args)
+
+    tktext.insert(tk.END, "Computing thermal accumulation values\n")
+    tktext.see(tk.END) # scroll if needed
+    tkroot.update()
     dd = compute_BMDD_Fs(t['minAT'], t['maxAT'], args.base_temp)
 
     ## Plot
-    
+
     ## Main results figure ... spaehtti-like plot
     fig = plt.figure(figsize=(7,4))
     ax = fig.add_subplot(1,1,1)
@@ -264,8 +295,8 @@ def main_process(args):
     ax.set_xlim(left=0)
     ax.set_ylim(bottom=0)
     ax.legend()
-    fig.tight_layout()    
-    
+    fig.tight_layout()
+
     # save figure to memory (optionally show)
     figio = io.BytesIO()
     fig.savefig(figio, format="svg", bbox_inches='tight')
@@ -273,12 +304,12 @@ def main_process(args):
     del figio
     if args.interactive:
         plt.show()
-    
+
     ## Temperature plot
     t2 = t.loc[norm_start:max_plot_date] # only show values actually used
     fig = plt.figure(figsize=(7,4))
     gs = mpl.gridspec.GridSpec(2, 1, height_ratios=[4,1])
-   
+
     ax = fig.add_subplot(gs[0,0])
     regions = [['input',        (t2['filled'] == 0) & (t2['normN'] == 0), 'C0'],
                ['interpolated', (t2['filled'] != 0) & (t2['normN'] == 0), 'C1'],
@@ -297,13 +328,13 @@ def main_process(args):
     ax.axvline(x=pd.to_datetime(start_date), c='k', ls=':', label="start date", alpha=0.5)
     ldg = ax.legend(loc='lower left', ncol=4, bbox_to_anchor=(0,1))
     ax.set_ylabel("temperature")
-    
+
     ax2 = fig.add_subplot(gs[1,0], sharex=ax)
     ax2.plot(t2.index, t2['cntAT'])
     ax2.set_ylabel("# readings\nper day")
     ax2.set_xlabel("date")
     ax2.set_xlim(left=t2.index[0])
-    fig.tight_layout()    
+    fig.tight_layout()
 
     # save figure to memory (optionally show)
     figio = io.BytesIO()
@@ -315,12 +346,12 @@ def main_process(args):
 
     # computed variables for output
     latest_temp_datetime = t.loc[(t['filled'] == 0) & (t['normN'] == 0)].index[-1]
-    
+
     # output html
     if not args.out_file:
         tmp = "{} {} {}.html".format(args.station, args.start_date, 
                       datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d"))#T%H:%M:%S.%f%z"))
-        outfilename = tkinter.filedialog.asksaveasfilename(initialdir=".",
+        outfilename = tk.filedialog.asksaveasfilename(initialdir=".",
                 title = "Save Report",
                 initialfile=tmp,
                 defaultextension=".html",
@@ -334,7 +365,7 @@ def main_process(args):
         logging.error("Cannot save to: '{}'".format(outfilename))
         sys.exit(1)
     logging.info("Saving to: '{}'".format(outfilename))
-    
+
     # header boilerplate
     with open(outfilename, 'w') as fh:
         tmp = """<!doctype html>
@@ -368,7 +399,7 @@ def main_process(args):
 <li> Lastest temperatre date : {latest_temp_date}
 <li> Earliest temperature date : {earliest_temp_date}
 <li> Normal temeperatures calcuated using : {norm_start} to {latest_temp_date}
-<li> Input filename : {temperatures_file}
+<li> Input filename : {temperatures_filename}
 </ul>
 
 <h3> Results </h3>
@@ -382,7 +413,7 @@ def main_process(args):
            latest_temp_date=latest_temp_datetime.date(),
            earliest_temp_date=t.index[0].date(),
            norm_start=norm_start.date(),
-           temperatures_file=args.temperatures_file)
+           temperatures_filename=temperatures_filename)
         print(tmp, file=fh)
         for i in range(len(fdate)-1):
             print("<li> generation {} : {}  ({} days past start)".format(i+1,
@@ -391,14 +422,14 @@ def main_process(args):
                 print("<span style='color:green'> passed </span>", file=fh)
             else:
                 print("<span style='color:red'> projection </span>", file=fh)
-        print("</ul>", file=fh)        
-        
+        print("</ul>", file=fh)
+
     with open(outfilename, 'ab') as fh:
         fh.write(main_fig_str)
 
     with open(outfilename, 'a') as fh:
         print("<div class='pagebreak'></div>", file=fh)
-        print("<h3>Temperature values used for normals and current projection</h3>", file=fh)  
+        print("<h3>Temperature values used for normals and current projection</h3>", file=fh)
     with open(outfilename, 'ab') as fh:
         fh.write(t_fig_str)
 
@@ -408,7 +439,7 @@ def main_process(args):
 configuration filename : {cfg_filename}
 
 <pre style="white-space: pre-wrap;">
-temperatures_file: {temperatures_file}
+temperatures_file: {temperatures_filename}
 station: {station}
 start_date: {start_date}
 
@@ -427,22 +458,33 @@ date_col: {date_col}
 time_col: {time_col}
 air_temp_col: {air_temp_col}
 
+out_file: {outfilename}
 interactive: {interactive}
 </pre>
 </body>
-</html>""".format(**vars(args))
+</html>""".format(temperatures_filename=temperatures_filename,
+                    outfilename=outfilename,
+                    **vars(args))
         print(tmp, file=fh)
 
-# min_readings_per_day: 4 # exclude days with too few temperature reads/points
-# max_num_years_to_norm: 6
-# norm_method: median # use either 'mean' or 'median' for normal/typical temperatures
-# num_years_to_add_for_projection: 3
-        
+
+    # open file
+    if sys.platform=='win32':
+        os.startfile(outfilename)
+    elif sys.platform=='darwin':
+        subprocess.Popen(['open', outfilename])
+    else:
+        try:
+            subprocess.Popen(['xdg-open', outfilename])
+        except OSError:
+            logging.warn("Cannot figure out how to open the report file")
+
     # done
     return 0
 
-def load_temperature_data(args):
-    fn = args.temperatures_file
+
+def load_temperature_data(fn, args):
+    #fn = args.temperatures_file
     station = args.station
     interp_window = args.interpolation_window
     max_num_years_to_norm = args.max_num_years_to_norm
@@ -576,7 +618,6 @@ def compute_BMDD_Fs(tmin, tmax, base_temp):
     dd.columns = ['tmin', 'tmax']
     dd['DD'] = dd.apply(lambda x: _compute_daily_BM_DD(x[0], x[1], (x[0]+x[1])/2.0, base_temp), axis=1)
     return dd
-
 
 
 ## Main hook for running as script
