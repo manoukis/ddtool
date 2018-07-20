@@ -23,6 +23,7 @@ mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 
 import tkinter as tk
+from tkinter import ttk
 import tkinter.filedialog
 
 # setup logging
@@ -190,20 +191,99 @@ def main(argv):
 
 #######
 
+
+class DDToolFrame(ttk.Frame):
+    def __init__(self, parent, *args, **kwargs):
+        ttk.Frame.__init__(self, parent, *args, **kwargs)
+
+        self.temperatures_file = None
+
+        self.root = parent
+        self.root.title("DD Tool")
+        self.pack(fill=tk.BOTH, expand=1)
+
+        foo = ttk.Frame(parent)
+        foo.pack(anchor=tk.W, padx=10, pady=2)
+        self.temperatures_file_label = ttk.Label(foo, text='')
+        self.temperatures_file_label.pack(side=tk.LEFT)
+        self.default_label_bg = self.temperatures_file_label.cget('background') # only need once
+        self.temperatures_file_button = tk.Button(foo, text='Select', command=self._choose_tfile)
+        self.temperatures_file_button.pack(side=tk.RIGHT)
+        self.default_button_bg = self.temperatures_file_button.cget('bg') # only need once
+        self._update_tfile()
+
+        foo = ttk.Frame(parent)
+        foo.pack(anchor=tk.W, padx=10, pady=2)
+        self.temperatures_file_label = ttk.Label(foo, text='')
+        self.temperatures_file_label.pack(side=tk.LEFT)
+        self.default_label_bg = self.temperatures_file_label.cget('background') # only need once
+        self.temperatures_file_button = tk.Button(foo, text='Select', command=self._choose_tfile)
+        self.temperatures_file_button.pack(side=tk.RIGHT)
+        self.default_button_bg = self.temperatures_file_button.cget('bg') # only need once
+        self._update_tfile()
+
+        self.tktext = tk.Text(master=parent)
+        self.tktext.pack(anchor=tk.W, expand=1, fill=tk.BOTH)
+
+        run_button = ttk.Button(parent, text='RUN', command=self._quit)
+        run_button.pack(anchor=tk.S, padx=3, pady=3)
+        quit_button = ttk.Button(parent, text='Quit', command=self._quit)
+        quit_button.pack(anchor=tk.SE, padx=3, pady=3)
+
+    def _quit(self):
+        self.root.quit()
+
+    def _choose_tfile(self):
+        if self.temperatures_file:
+            tmpd, tmpf = os.path.split(self.temperatures_file)
+        else:
+            tmpd = '.'
+            tmpf = None
+        tfn = tk.filedialog.askopenfilename(
+                title = "Select Temperatures File",
+                initialdir=tmpd,
+                initialfile=tmpf,
+                defaultextension=".xlsx",
+                filetypes = (("Excel files",("*.xlsx","*.xls")), ("all files","*.*")))
+        if tfn:
+            if os.path.isfile(tfn):
+                self.temperatures_file = tfn
+            else:
+                logging.warn("'{}' is not a file... This shouldn't happen".format(tfn))
+        self._update_tfile()
+
+    def _update_tfile(self):
+        if self.temperatures_file:
+            tmptxt = "temperatures file : {}".format(self.temperatures_file)
+            self.temperatures_file_label.config(text=tmptxt, background=self.default_label_bg)
+            self.temperatures_file_button.config(text="Change", bg=self.default_button_bg)
+        else:
+            tmptxt = "temperatures file :"
+            self.temperatures_file_label.config(text=tmptxt, background='yellow')
+            self.temperatures_file_button.config(text="CHOOSE", bg='red')
+
+
 def main_process(args):
     print("main process")
 
     tkroot = tk.Tk()
-    tkroot.title("DDTool")
+    #root.geometry("800x600")
+    app = DDToolFrame(tkroot)
+
+    tkroot.mainloop()
+    sys.exit(0)
+
     #tkroot.withdraw()
-    tktext = tk.Text(master=tkroot)
-    tktext.pack(side=tk.RIGHT)
+
+
+
 
     tktext.insert(tk.END, "DDTool:\n\n")
     tktext.insert(tk.END, "Started at {}\n".format(time.strftime("%Y-%m-%d %T %z")))
     tktext.insert(tk.END, "Using configuration file '{}'\n".format(args.cfg_filename))
     tktext.see(tk.END) # scroll if needed
     tkroot.update()
+
 
     if args.temperatures_file:
         temperatures_filename = args.temperatures_file
