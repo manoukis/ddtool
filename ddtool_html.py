@@ -118,8 +118,8 @@ def main(argv):
             help="File containing the daily min & max temperature data for all sites")
     parser.add_argument("-o","--out-file", default=None,
             help="Filename to output results report to; Default is to ask")
-    parser.add_argument("-s","--station", default=None,
-            help="Name of temperature station")
+    parser.add_argument("-s","--station", default='',
+            help="Filter temperatures_file for given station name")
     parser.add_argument("--start-date", type=str, default=None,
             help="Date (YYYY-MM-DD) to begin degree-day accumulation calculation")
     parser.add_argument("--base-temp", type=float, default=None,
@@ -163,8 +163,7 @@ def main(argv):
     vars(args).update({'cfg_filename':cfg_filename})
 
     # test for required arguments/parameters
-    for k in ['station',
-              'start_date',
+    for k in ['start_date',
               'base_temp',
               'DD_per_gen',
              ]:
@@ -346,10 +345,15 @@ def main_process(args):
 
     # computed variables for output
     latest_temp_datetime = t.loc[(t['filled'] == 0) & (t['normN'] == 0)].index[-1]
+    # name ... a short descriptive string used for title, filename, ect.
+    if args.station:
+        name = args.station
+    else:
+        name = os.path.splitext(os.path.basename(temperatures_filename))[0]
 
     # output html
     if not args.out_file:
-        tmp = "{} {} {}.html".format(args.station, args.start_date, 
+        tmp = "{} {} {}.html".format(name, args.start_date,
                       datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d"))#T%H:%M:%S.%f%z"))
         outfilename = tk.filedialog.asksaveasfilename(initialdir=".",
                 title = "Save Report",
@@ -372,7 +376,7 @@ def main_process(args):
 <html lang='en'>
 <head>
   <meta charset='utf-8'>
-  <title>{station} {start_date}</title>
+  <title>{name} {start_date}</title>
   <style>
 	h1, h2, h3, h4, h5, h6{{
 		margin-top: .5em;
@@ -383,7 +387,7 @@ def main_process(args):
   </style>
 </head>
 <body>
-<h1>Thermal accumulation projections for {station} starting on {start_date}</h1>
+<h1>Thermal accumulation projections for {name} starting on {start_date}</h1>
 <small>Generated at {run_time_str}</small>
 
 <h3> Model </h3>
@@ -395,25 +399,26 @@ def main_process(args):
 
 <h3> Temperature data available </h3>
 <ul style='list-style-type:none'>
+<li> Filename : {temperatures_filename}
 <li> Station : {station}
 <li> Lastest temperatre date : {latest_temp_date}
 <li> Earliest temperature date : {earliest_temp_date}
 <li> Normal temeperatures calcuated using : {norm_start} to {latest_temp_date}
-<li> Input filename : {temperatures_filename}
 </ul>
 
 <h3> Results </h3>
 <ul style='list-style-type:none'>
 <li> start : {start_date}
-""".format(station=args.station,
-           start_date=args.start_date,
-           run_time_str=datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z"),
-           base_temp=args.base_temp,
-           DD_per_gen=args.DD_per_gen,
-           latest_temp_date=latest_temp_datetime.date(),
-           earliest_temp_date=t.index[0].date(),
-           norm_start=norm_start.date(),
-           temperatures_filename=temperatures_filename)
+""".format(name=name,
+            station=args.station,
+            start_date=args.start_date,
+            run_time_str=datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z"),
+            base_temp=args.base_temp,
+            DD_per_gen=args.DD_per_gen,
+            latest_temp_date=latest_temp_datetime.date(),
+            earliest_temp_date=t.index[0].date(),
+            norm_start=norm_start.date(),
+            temperatures_filename=temperatures_filename)
         print(tmp, file=fh)
         for i in range(len(fdate)-1):
             print("<li> generation {} : {}  ({} days past start)".format(i+1,
@@ -503,9 +508,11 @@ def load_temperature_data(fn, args):
         return 1
     df.rename(columns={date_col:'date',
                        time_col:'time',
-                       station_col:'station',
                        air_temp_col:'AT'}, inplace=True)
-    df = df.loc[df['station'] == station]
+    if station_col:
+        df.rename(columns={station_col:'station'}, inplace=True)
+    if station:
+        df = df.loc[df['station'] == station]
     df['datetime'] = df.apply(lambda r : pd.datetime.combine(r['date'],r['time']),1)
     print(df.head())
 
