@@ -38,12 +38,6 @@ logging.getLogger().setLevel(logging.INFO)
 ## CONSTANTS ##
 # The default configuration (as a string so we don't need an extra file)
 INLINE_DEFAULT_CFG_FILE = """
-# test configuration file
-# temperatures_file: testfiles/LAAR_CountryClub2000-2018_Temps.xlsx
-
-# station: Country Club
-# start_date: 2018-01-01
-
 # base_temp: 54.3
 # DD_per_gen: 622
 # num_gen: 3
@@ -105,13 +99,13 @@ def main(argv):
     else:
         defaults = {}
 
-    if cfg_filename == 'INLINE DEFAULT CONFIG':
-        #print("Using default configuration")
-        # require a configuration file
-        print("Error: Must specify a configuration file", file=sys.stderr)
-        sys.exit(2)
-    else:
-        print("Using configuration file '{}'".format(cfg_filename))
+#    if cfg_filename == 'INLINE DEFAULT CONFIG':
+#        #print("Using default configuration")
+#        # require a configuration file
+#        print("Error: Must specify a configuration file", file=sys.stderr)
+#        sys.exit(2)
+#    else:
+    print("Using configuration file '{}'".format(cfg_filename))
 
     # parse rest of arguments with a new ArgumentParser
     parser = argparse.ArgumentParser(description=__doc__, parents=[conf_parser])
@@ -119,8 +113,8 @@ def main(argv):
             help="File containing the daily min & max temperature data for all sites")
     parser.add_argument("-o","--out-file", default=None,
             help="Filename to output results report to; Default is to ask")
-    parser.add_argument("-s","--station", default=None,
-            help="Name of temperature station")
+    parser.add_argument("-s","--station", default='',
+            help="Filter temperatures_file for given station name")
     parser.add_argument("--start-date", type=str, default=None,
             help="Date (YYYY-MM-DD) to begin degree-day accumulation calculation")
     parser.add_argument("--base-temp", type=float, default=None,
@@ -164,13 +158,12 @@ def main(argv):
     vars(args).update({'cfg_filename':cfg_filename})
 
     # test for required arguments/parameters
-    for k in ['station',
-              'start_date',
-              'base_temp',
-              'DD_per_gen',
-             ]:
-        if not k in args or vars(args)[k] is None:
-            parser.error("Must specify '{}' parameter".format(k))
+#    for k in ['start_date',
+#              'base_temp',
+#              'DD_per_gen',
+#             ]:
+#        if not k in args or vars(args)[k] is None:
+#            parser.error("Must specify '{}' parameter".format(k))
 
     logging.getLogger().setLevel(logging.getLogger().getEffectiveLevel()+
                                  (10*(args.quiet-args.verbose-args.verbose_level)))
@@ -193,10 +186,11 @@ def main(argv):
 
 
 class DDToolFrame(ttk.Frame):
-    def __init__(self, parent, *args, **kwargs):
+    def __init__(self, parent, cfg, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
 
-        self.temperatures_file = None
+        self.cfg_file = cfg.cfg_filename
+        self.temperatures_file = cfg.temperatures_file
 
         self.root = parent
         self.root.title("DD Tool")
@@ -204,22 +198,22 @@ class DDToolFrame(ttk.Frame):
 
         foo = ttk.Frame(parent)
         foo.pack(anchor=tk.W, padx=10, pady=2)
-        self.temperatures_file_label = ttk.Label(foo, text='')
-        self.temperatures_file_label.pack(side=tk.LEFT)
-        self.default_label_bg = self.temperatures_file_label.cget('background') # only need once
-        self.temperatures_file_button = tk.Button(foo, text='Select', command=self._choose_tfile)
-        self.temperatures_file_button.pack(side=tk.RIGHT)
-        self.default_button_bg = self.temperatures_file_button.cget('bg') # only need once
-        self._update_tfile()
+        self.cfg_file_label = ttk.Label(foo, text='')
+        self.cfg_file_label.pack(side=tk.LEFT)
+        self.default_label_bg = self.cfg_file_label.cget('background') # only need once
+        self.cfg_file_button = tk.Button(foo, text='Select', command=self._choose_cfg_file)
+        self.cfg_file_button.pack(side=tk.RIGHT)
+        self.default_button_bg = self.cfg_file_button.cget('bg') # only need once
+        self._update_cfg_file()
+
+        ttk.Separator(parent, orient='horizontal').pack(anchor=tk.W, fill=tk.X)
 
         foo = ttk.Frame(parent)
         foo.pack(anchor=tk.W, padx=10, pady=2)
         self.temperatures_file_label = ttk.Label(foo, text='')
         self.temperatures_file_label.pack(side=tk.LEFT)
-        self.default_label_bg = self.temperatures_file_label.cget('background') # only need once
         self.temperatures_file_button = tk.Button(foo, text='Select', command=self._choose_tfile)
         self.temperatures_file_button.pack(side=tk.RIGHT)
-        self.default_button_bg = self.temperatures_file_button.cget('bg') # only need once
         self._update_tfile()
 
         self.tktext = tk.Text(master=parent)
@@ -232,6 +226,25 @@ class DDToolFrame(ttk.Frame):
 
     def _quit(self):
         self.root.quit()
+
+    def _choose_cfg_file(self):
+        if self.cfg_file:
+            tmpd, tmpf = os.path.split(self.cfg_file)
+        else:
+            tmpd = '.'
+            tmpf = None
+        tfn = tk.filedialog.askopenfilename(
+                title = "Select Configuration File",
+                initialdir=tmpd,
+                initialfile=tmpf,
+                defaultextension=".cfg",
+                filetypes = (("Config files",("*.cfg")), ("all files","*.*")))
+        if tfn:
+            if os.path.isfile(tfn):
+                self.cfg_file = tfn
+            else:
+                logging.warn("'{}' is not a file... This shouldn't happen".format(tfn))
+        self._update_cfg_file()
 
     def _choose_tfile(self):
         if self.temperatures_file:
@@ -252,6 +265,16 @@ class DDToolFrame(ttk.Frame):
                 logging.warn("'{}' is not a file... This shouldn't happen".format(tfn))
         self._update_tfile()
 
+    def _update_cfg_file(self):
+        if self.cfg_file and self.cfg_file != 'INLINE DEFAULT CONFIG':
+            tmptxt = "configuration file : {}".format(self.cfg_file)
+            self.cfg_file_label.config(text=tmptxt, background=self.default_label_bg)
+            self.cfg_file_button.config(text="Change", bg=self.default_button_bg)
+        else:
+            tmptxt = "configuration file :"
+            self.cfg_file_label.config(text=tmptxt)#, background='yellow')
+            self.cfg_file_button.config(text="CHOOSE", bg='yellow')
+
     def _update_tfile(self):
         if self.temperatures_file:
             tmptxt = "temperatures file : {}".format(self.temperatures_file)
@@ -268,15 +291,12 @@ def main_process(args):
 
     tkroot = tk.Tk()
     #root.geometry("800x600")
-    app = DDToolFrame(tkroot)
+    app = DDToolFrame(tkroot, args)
 
     tkroot.mainloop()
     sys.exit(0)
 
     #tkroot.withdraw()
-
-
-
 
     tktext.insert(tk.END, "DDTool:\n\n")
     tktext.insert(tk.END, "Started at {}\n".format(time.strftime("%Y-%m-%d %T %z")))
@@ -426,10 +446,15 @@ def main_process(args):
 
     # computed variables for output
     latest_temp_datetime = t.loc[(t['filled'] == 0) & (t['normN'] == 0)].index[-1]
+    # name ... a short descriptive string used for title, filename, ect.
+    if args.station:
+        name = args.station
+    else:
+        name = os.path.splitext(os.path.basename(temperatures_filename))[0]
 
     # output html
     if not args.out_file:
-        tmp = "{} {} {}.html".format(args.station, args.start_date, 
+        tmp = "{} {} {}.html".format(name, args.start_date,
                       datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d"))#T%H:%M:%S.%f%z"))
         outfilename = tk.filedialog.asksaveasfilename(initialdir=".",
                 title = "Save Report",
@@ -452,7 +477,7 @@ def main_process(args):
 <html lang='en'>
 <head>
   <meta charset='utf-8'>
-  <title>{station} {start_date}</title>
+  <title>{name} {start_date}</title>
   <style>
 	h1, h2, h3, h4, h5, h6{{
 		margin-top: .5em;
@@ -463,7 +488,7 @@ def main_process(args):
   </style>
 </head>
 <body>
-<h1>Thermal accumulation projections for {station} starting on {start_date}</h1>
+<h1>Thermal accumulation projections for {name} starting on {start_date}</h1>
 <small>Generated at {run_time_str}</small>
 
 <h3> Model </h3>
@@ -475,25 +500,26 @@ def main_process(args):
 
 <h3> Temperature data available </h3>
 <ul style='list-style-type:none'>
+<li> Filename : {temperatures_filename}
 <li> Station : {station}
 <li> Lastest temperatre date : {latest_temp_date}
 <li> Earliest temperature date : {earliest_temp_date}
 <li> Normal temeperatures calcuated using : {norm_start} to {latest_temp_date}
-<li> Input filename : {temperatures_filename}
 </ul>
 
 <h3> Results </h3>
 <ul style='list-style-type:none'>
 <li> start : {start_date}
-""".format(station=args.station,
-           start_date=args.start_date,
-           run_time_str=datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z"),
-           base_temp=args.base_temp,
-           DD_per_gen=args.DD_per_gen,
-           latest_temp_date=latest_temp_datetime.date(),
-           earliest_temp_date=t.index[0].date(),
-           norm_start=norm_start.date(),
-           temperatures_filename=temperatures_filename)
+""".format(name=name,
+            station=args.station,
+            start_date=args.start_date,
+            run_time_str=datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z"),
+            base_temp=args.base_temp,
+            DD_per_gen=args.DD_per_gen,
+            latest_temp_date=latest_temp_datetime.date(),
+            earliest_temp_date=t.index[0].date(),
+            norm_start=norm_start.date(),
+            temperatures_filename=temperatures_filename)
         print(tmp, file=fh)
         for i in range(len(fdate)-1):
             print("<li> generation {} : {}  ({} days past start)".format(i+1,
@@ -583,9 +609,11 @@ def load_temperature_data(fn, args):
         return 1
     df.rename(columns={date_col:'date',
                        time_col:'time',
-                       station_col:'station',
                        air_temp_col:'AT'}, inplace=True)
-    df = df.loc[df['station'] == station]
+    if station_col:
+        df.rename(columns={station_col:'station'}, inplace=True)
+    if station:
+        df = df.loc[df['station'] == station]
     df['datetime'] = df.apply(lambda r : pd.datetime.combine(r['date'],r['time']),1)
     print(df.head())
 

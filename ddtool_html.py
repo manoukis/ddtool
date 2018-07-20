@@ -37,12 +37,6 @@ logging.getLogger().setLevel(logging.INFO)
 ## CONSTANTS ##
 # The default configuration (as a string so we don't need an extra file)
 INLINE_DEFAULT_CFG_FILE = """
-# test configuration file
-# temperatures_file: testfiles/LAAR_CountryClub2000-2018_Temps.xlsx
-
-# station: Country Club
-# start_date: 2018-01-01
-
 # base_temp: 54.3
 # DD_per_gen: 622
 # num_gen: 3
