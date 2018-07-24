@@ -216,6 +216,15 @@ class DDToolFrame(ttk.Frame):
         self.temperatures_file_button.pack(side=tk.RIGHT)
         self._update_tfile()
 
+        self.ent = {}
+
+        ttk.Separator(parent, orient='horizontal').pack(anchor=tk.W, fill=tk.X)
+
+        self.add_labeled_entry(parent, 'base_temp', cfg.base_temp, self._float_validate)
+        self.add_labeled_entry(parent, 'DD_per_gen', cfg.DD_per_gen, self._float_validate)
+        self.add_labeled_entry(parent, 'start_date', cfg.start_date, self._date_entry_validate)
+
+
         self.tktext = tk.Text(master=parent)
         self.tktext.pack(anchor=tk.W, expand=1, fill=tk.BOTH)
 
@@ -224,8 +233,72 @@ class DDToolFrame(ttk.Frame):
         quit_button = ttk.Button(parent, text='Quit', command=self._quit)
         quit_button.pack(anchor=tk.SE, padx=3, pady=3)
 
+
+    def add_labeled_entry(self, parent, varname, initial_value=None, validate_func=None):
+        self.ent[varname] = self.LabeledEntry(parent, varname, validate_func)
+        self.ent[varname].setvalue(initial_value)
+
+
+    class LabeledEntry():
+        def __init__(self, parent, varname, validate_func=None):
+            self.varname = varname
+            foo = ttk.Frame(parent)
+            foo.pack(anchor=tk.W, padx=10, pady=2)
+            self.var = tk.StringVar()
+            self.label = ttk.Label(foo, text=varname)
+            self.label.pack(side=tk.LEFT)
+            self.default_label_bg = self.label.cget('background')
+            validate_cmd = None
+            self.validate_func = None
+            if validate_func:
+                self.validate_func = validate_func
+                validate_cmd = (parent.register(validate_func), varname, '%P')
+            self.entry = ttk.Entry(foo,
+                                 textvariable=self.var,
+                                 validate='all',
+                                 validatecommand=validate_cmd)
+            self.entry.pack(side=tk.RIGHT, padx=10)
+            self.default_entry_bg = self.entry.cget('background')
+
+        def setvalue(self, newval):
+            if newval:
+                self.var.set(newval)
+            if self.validate_func:
+                self.validate_func(self.varname, newval)
+
+        def mark_valid(self, okflag):
+            if okflag:
+                self.label.config(background=self.default_label_bg)
+                self.entry.config(background=self.default_entry_bg)
+            else:
+                self.label.config(background='yellow')
+                self.entry.config(background='yellow')
+
+
+    def _date_entry_validate(self, varname, newval):
+        okflag = True
+        try:
+            datetime.strptime(newval, '%Y-%m-%d')
+        except (ValueError, TypeError):
+            # Incorrect data format, should be YYYY-MM-DD
+            okflag = False
+        self.ent[varname].mark_valid(okflag)
+        return True
+
+    def _float_validate(self, varname, newval):
+        try:
+            float(newval)
+            self.ent[varname].mark_valid(True)
+        except (ValueError, TypeError):
+            self.ent[varname].mark_valid(False)
+        return True
+
+
+
+
     def _quit(self):
         self.root.quit()
+
 
     def _choose_cfg_file(self):
         if self.cfg_file:
