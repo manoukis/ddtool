@@ -189,6 +189,7 @@ class DDToolFrame(ttk.Frame):
     def __init__(self, parent, cfg, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
 
+        self.ent = {}
         self.cfg_file = cfg.cfg_filename
         self.temperatures_file = cfg.temperatures_file
 
@@ -207,7 +208,6 @@ class DDToolFrame(ttk.Frame):
         self._update_cfg_file()
 
         ttk.Separator(parent, orient='horizontal').pack(anchor=tk.W, fill=tk.X)
-
         foo = ttk.Frame(parent)
         foo.pack(anchor=tk.W, padx=10, pady=2)
         self.temperatures_file_label = ttk.Label(foo, text='')
@@ -216,7 +216,12 @@ class DDToolFrame(ttk.Frame):
         self.temperatures_file_button.pack(side=tk.RIGHT)
         self._update_tfile()
 
-        self.ent = {}
+        self.add_labeled_entry(parent, 'skiprows', str(cfg.skiprows), self._isdigit_validate)
+        self.add_labeled_entry(parent, 'date_col', cfg.date_col)
+        self.add_labeled_entry(parent, 'time_col', cfg.time_col)
+        self.add_labeled_entry(parent, 'air_temp_col', cfg.air_temp_col)
+        self.add_labeled_entry(parent, 'station_col', cfg.station_col)
+        
 
         ttk.Separator(parent, orient='horizontal').pack(anchor=tk.W, fill=tk.X)
 
@@ -225,7 +230,7 @@ class DDToolFrame(ttk.Frame):
         self.add_labeled_entry(parent, 'start_date', cfg.start_date, self._date_entry_validate)
 
 
-        self.tktext = tk.Text(master=parent)
+        self.tktext = tk.Text(master=parent, state='disabled')
         self.tktext.pack(anchor=tk.W, expand=1, fill=tk.BOTH)
 
         run_button = ttk.Button(parent, text='RUN', command=self._quit)
@@ -293,7 +298,12 @@ class DDToolFrame(ttk.Frame):
             self.ent[varname].mark_valid(False)
         return True
 
-
+    def _isdigit_validate(self, varname, newval):
+        try:
+            self.ent[varname].mark_valid(str.isdigit(newval))
+        except (TypeError):
+            self.ent[varname].mark_valid(False)
+        return True
 
 
     def _quit(self):
