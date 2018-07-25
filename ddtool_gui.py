@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import ttk
 import tkinter.filedialog
+import tkinter.font
 
 # setup logging
 def getlvlnum(name):
@@ -174,7 +175,14 @@ def main(argv):
                         # datetime.fromtimestamp(run_time).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
     # logging.info("args="+str(args))
 
-    cfg = load_config(sys.argv[1])
+    ## Configuration
+    if len(sys.argv) > 1:
+        cfg = load_config(sys.argv[1])
+    else:
+        cfg = copy.deepcopy(DDTOOL_DEFAULT_CONFIG)
+    print("cfg=",cfg)
+
+    ## Run main process
     retval = main_process(cfg)
 
     # # cleanup and exit
@@ -186,77 +194,54 @@ def main(argv):
 
 #######
 
-DDTOOL_DEFAULT_TFILE_CONFIG = {
-        'temperatures_file': None,
-        'skiprows': 0,
-        'station_col': "STATION",
-        'date_col': "DATE",
-        'time_col': "TIME",
-        'air_temp_col': "TEMP_A_F",
-    }
-
-DDTOOL_DEFAULT_RUN_CONFIG = {
-        'start_date': None,
-        'base_temp': 54.3,
-        'DD_per_gen': 622,
-        'num_gen': 3,
-        'min_readings_per_day': 4, # exclude days with too few temperature reads/points
-        'max_num_years_to_norm': 6,
+DDTOOL_DEFAULT_CONFIG = {
+        'cfg_filename': '',
+        'temperatures_file': '',
+        'station': '',
+        'skiprows': '0',
+        'station_col': 'STATION',
+        'date_col': 'DATE',
+        'time_col': 'TIME',
+        'air_temp_col': 'TEMP_A_F',
+        'start_date': '',
+        'base_temp': '54.3',
+        'DD_per_gen': '622',
+        'num_gen': '3',
+        'min_readings_per_day': '4', # exclude days with too few temperature reads/points
+        'max_num_years_to_norm': '6',
         'norm_method': 'median', # use either 'mean' or 'median' for normal/typical temperatures
-        'num_years_to_add_for_projection': 3,
-        'interpolation_window': 3,  # number of points to average on ends of gaps before interpolating
-    }
-    
-     
+        'num_years_to_add_for_projection': '3',
+        'interpolation_window': '3',  # number of points to average on ends of gaps before interpolating
+        }
+
+
 def load_config(cfg_filename):
     incfg = configparser.ConfigParser(inline_comment_prefixes=('#',';'))
     incfg.optionxform = str # make configparser case-sensitive
     with open(cfg_filename,'r') as fh:
         incfg.read_file(chain(("[DEFAULTS]",), fh))
     incfg = dict(incfg.items("DEFAULTS"))
-    print(incfg)
-    
-    tcfg = copy.deepcopy(DDTOOL_DEFAULT_TFILE_CONFIG)
-    tcfg['temperatures_file'] = incfg.get('temperatures_file', None)
-    
-    sys.exit(0)
-        # tcfg = None,
-    # 'skiprows': 0,
-    # 'station_col': "STATION",
-        # 'date_col': "DATE",
-        # 'time_col': "TIME",
-        # 'air_temp_col': "TEMP_A_F",
-    
-    
-    
-    # defaults = dict(cfg.items("DEFAULTS"))
-    # # special handling of paratmeters that need it like lists
-    # for k in ['num_gen', # ints
-              # 'max_num_years_to_norm',
-              # 'num_years_to_add_for_projection',
-              # 'min_readings_per_day',
-              # 'interpolation_window',
-              # 'skiprows']:
-        # if k in defaults:
-            # defaults[k] = int(defaults[k])
-    # for k in ['base_temp', # floats
-              # 'DD_per_gen']:
-        # if k in defaults:
-            # defaults[k] = float(defaults[k])
-    # for k in ['interactive']: # booleans
-        # if k in defaults:
-            # defaults[k] = defaults[k].lower() in ['true', 'yes', 'y', '1']
-    
+    cfg = copy.deepcopy(DDTOOL_DEFAULT_CONFIG)
+    for k,v in incfg.items():
+        if not k in cfg:
+            logging.warn("Ignorning unkown config option '{}' (value='{}')".format(k, v))
+        else:
+            cfg[k] = incfg[k]
+    return cfg
+
 
 class DDToolFrame(ttk.Frame):
 
     def __init__(self, parent, cfg, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
 
-        self.ent = {}
-        self.cfg_file = cfg.cfg_filename
-        self.temperatures_file = cfg.temperatures_file
+        self.default_cfg = DDTOOL_DEFAULT_CONFIG
+        self.last_cfg = copy.deepcopy(cfg)
 
+        self.cfg_file = cfg['cfg_filename']
+        self.temperatures_file = cfg['temperatures_file']
+
+        self.ent = {}
         self.root = parent
         self.root.title("DD Tool")
         self.pack(fill=tk.BOTH, expand=1)
@@ -285,25 +270,25 @@ class DDToolFrame(ttk.Frame):
         self.temperatures_file_button.pack(side=tk.RIGHT)
         self._update_tfile()
 
-        self.add_labeled_entry(tfile_frame, 'skiprows', str(cfg.skiprows), self._isdigit_validate)
-        self.add_labeled_entry(tfile_frame, 'date_col', cfg.date_col)
-        self.add_labeled_entry(tfile_frame, 'time_col', cfg.time_col)
-        self.add_labeled_entry(tfile_frame, 'air_temp_col', cfg.air_temp_col)
-        self.add_labeled_entry(tfile_frame, 'station_col', cfg.station_col)
+        self.add_labeled_entry(tfile_frame, 'skiprows', cfg['skiprows'], self._isdigit_tfile_validate)
+        self.add_labeled_entry(tfile_frame, 'date_col', cfg['date_col'])
+        self.add_labeled_entry(tfile_frame, 'time_col', cfg['time_col'])
+        self.add_labeled_entry(tfile_frame, 'air_temp_col', cfg['air_temp_col'])
+        #self.add_labeled_entry(tfile_frame, 'station_col', cfg['station_col'])
         
         self.load_tfile_button = tk.Button(tfile_frame, text='Load Temperatures File',
                     state='disabled')
         self.load_tfile_button.pack(side=tk.BOTTOM)
 
-        
         ttk.Separator(parent, orient='horizontal').pack(anchor=tk.W, fill=tk.X)
 
-        self.add_labeled_entry(parent, 'base_temp', cfg.base_temp, self._float_validate)
-        self.add_labeled_entry(parent, 'DD_per_gen', cfg.DD_per_gen, self._float_validate)
-        self.add_labeled_entry(parent, 'start_date', cfg.start_date, self._date_entry_validate)
+        self.add_labeled_entry(parent, 'base_temp', cfg['base_temp'], self._float_validate)
+        self.add_labeled_entry(parent, 'DD_per_gen', cfg['DD_per_gen'], self._float_validate)
+        self.add_labeled_entry(parent, 'start_date', cfg['start_date'], self._date_entry_validate)
 
 
-        self.tktext = tk.Text(master=parent, state='disabled')
+        self.tktext = tk.Text(master=parent)
+        self.tktext.bind("<Key>", lambda _: 'break') # make read-only
         self.tktext.pack(anchor=tk.W, expand=1, fill=tk.BOTH)
 
         run_button = ttk.Button(parent, text='RUN',
@@ -311,6 +296,8 @@ class DDToolFrame(ttk.Frame):
         run_button.pack(anchor=tk.S, padx=3, pady=3)
         quit_button = ttk.Button(parent, text='Quit', command=self._quit)
         quit_button.pack(anchor=tk.SE, padx=3, pady=3)
+
+        parent.update()
 
 
     def add_labeled_entry(self, parent, varname, initial_value=None, validate_func=None):
@@ -327,6 +314,8 @@ class DDToolFrame(ttk.Frame):
             self.label = ttk.Label(foo, text=varname)
             self.label.pack(side=tk.LEFT)
             self.default_label_bg = self.label.cget('background')
+            #self.default_label_font = tk.font.Font(font=self.label['font']).actual()
+            #print(self.default_label_font)
             validate_cmd = None
             self.validate_func = None
             if validate_func:
@@ -372,6 +361,19 @@ class DDToolFrame(ttk.Frame):
             self.ent[varname].mark_valid(False)
         return True
 
+
+    ###  @TCC -- Working point
+    def _isdigit_tfile_validate(self, varname, newval):
+        try:
+            self.ent[varname].mark_valid(str.isdigit(newval))
+        except (TypeError):
+            self.ent[varname].mark_valid(False)
+        print(newval, self.last_cfg[varname])
+        if newval != self.last_cfg[varname]:
+            print("TFILE RELOAD NEEDED")
+        return True
+
+
     def _isdigit_validate(self, varname, newval):
         try:
             self.ent[varname].mark_valid(str.isdigit(newval))
@@ -382,7 +384,6 @@ class DDToolFrame(ttk.Frame):
 
     def _quit(self):
         self.root.quit()
-
 
     def _choose_cfg_file(self):
         if self.cfg_file:
@@ -442,24 +443,28 @@ class DDToolFrame(ttk.Frame):
             self.temperatures_file_label.config(text=tmptxt, background='yellow')
             self.temperatures_file_button.config(text="CHOOSE", bg='red')
 
+    def log(self, s):
+        self.tktext.insert(tk.END, s)
+        self.tktext.see(tk.END) # scroll if needed
+        self.update()
 
-def main_process(args):
+
+def main_process(cfg):
     print("main process")
 
     tkroot = tk.Tk()
-    #root.geometry("800x600")
-    app = DDToolFrame(tkroot, args)
+    #tkroot.geometry("800x600")
+    app = DDToolFrame(tkroot, cfg)
+
+    app.log("DDTool:\n\n")
+    app.log("Started at {}\n".format(time.strftime("%Y-%m-%d %T %z")))
+    app.log("Using configuration file '{}'\n".format(cfg['cfg_filename']))
 
     tkroot.mainloop()
+
     sys.exit(0)
-
-    #tkroot.withdraw()
-
-    tktext.insert(tk.END, "DDTool:\n\n")
-    tktext.insert(tk.END, "Started at {}\n".format(time.strftime("%Y-%m-%d %T %z")))
-    tktext.insert(tk.END, "Using configuration file '{}'\n".format(args.cfg_filename))
-    tktext.see(tk.END) # scroll if needed
-    tkroot.update()
+    ########################################################################
+    ########################################################################
 
 
     if args.temperatures_file:
