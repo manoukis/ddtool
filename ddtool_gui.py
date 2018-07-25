@@ -4,6 +4,7 @@
 
 import sys
 import os
+import copy
 import time
 import configparser
 from itertools import chain
@@ -60,132 +61,195 @@ INLINE_DEFAULT_CFG_FILE = """
 ###
 def main(argv):
     # parse cfg_file argument and set defaults
-    conf_parser = argparse.ArgumentParser(description=__doc__,
-                                          add_help=False)  # turn off help so later parse handles it
-    inline_default_cfg_file = io.StringIO(INLINE_DEFAULT_CFG_FILE)
-    inline_default_cfg_file.name = 'INLINE DEFAULT CONFIG' # needs to have a name for argparse to work with it
-    conf_parser.add_argument(dest='cfg_file', nargs='?', type=argparse.FileType('r'),
-                             default=inline_default_cfg_file,
-                             help="Config file specifiying options/parameters.\n"
-                             "Any long option can be set by removing the leading '--' and replacing '-' with '_'")
-    args, remaining_argv = conf_parser.parse_known_args(argv)
-    # build the config (read config files)
-    cfg_filename = None
-    if args.cfg_file:
-        cfg_filename = args.cfg_file.name
-        cfg = configparser.ConfigParser(inline_comment_prefixes=('#',';'))
-        cfg.optionxform = str # make configparser case-sensitive
-        cfg.read_file(chain(("[DEFAULTS]",), args.cfg_file))
-        defaults = dict(cfg.items("DEFAULTS"))
-        # special handling of paratmeters that need it like lists
-        for k in ['num_gen', # ints
-                  'max_num_years_to_norm',
-                  'num_years_to_add_for_projection',
-                  'min_readings_per_day',
-                  'interpolation_window',
-                  'skiprows']:
-            if k in defaults:
-                defaults[k] = int(defaults[k])
-        for k in ['base_temp', # floats
-                  'DD_per_gen']:
-            if k in defaults:
-                defaults[k] = float(defaults[k])
-        for k in ['interactive']: # booleans
-            if k in defaults:
-                defaults[k] = defaults[k].lower() in ['true', 'yes', 'y', '1']
-        #if( 'files' in defaults ): # files needs to be a list
-        #    defaults['files'] = [ x for x in defaults['files'].split('\n')
-        #                        if x and x.strip() and not x.strip()[0] in ['#',';'] ]
-    else:
-        defaults = {}
+    # conf_parser = argparse.ArgumentParser(description=__doc__,
+                                          # add_help=False)  # turn off help so later parse handles it
+    # inline_default_cfg_file = io.StringIO(INLINE_DEFAULT_CFG_FILE)
+    # inline_default_cfg_file.name = 'INLINE DEFAULT CONFIG' # needs to have a name for argparse to work with it
+    # conf_parser.add_argument(dest='cfg_file', nargs='?', type=argparse.FileType('r'),
+                             # default=inline_default_cfg_file,
+                             # help="Config file specifiying options/parameters.\n"
+                             # "Any long option can be set by removing the leading '--' and replacing '-' with '_'")
+    # args, remaining_argv = conf_parser.parse_known_args(argv)
+    # # build the config (read config files)
+    # cfg_filename = None
+    # if args.cfg_file:
+        # cfg_filename = args.cfg_file.name
+        # cfg = configparser.ConfigParser(inline_comment_prefixes=('#',';'))
+        # cfg.optionxform = str # make configparser case-sensitive
+        # cfg.read_file(chain(("[DEFAULTS]",), args.cfg_file))
+        # defaults = dict(cfg.items("DEFAULTS"))
+        # # special handling of paratmeters that need it like lists
+        # for k in ['num_gen', # ints
+                  # 'max_num_years_to_norm',
+                  # 'num_years_to_add_for_projection',
+                  # 'min_readings_per_day',
+                  # 'interpolation_window',
+                  # 'skiprows']:
+            # if k in defaults:
+                # defaults[k] = int(defaults[k])
+        # for k in ['base_temp', # floats
+                  # 'DD_per_gen']:
+            # if k in defaults:
+                # defaults[k] = float(defaults[k])
+        # for k in ['interactive']: # booleans
+            # if k in defaults:
+                # defaults[k] = defaults[k].lower() in ['true', 'yes', 'y', '1']
+        # #if( 'files' in defaults ): # files needs to be a list
+        # #    defaults['files'] = [ x for x in defaults['files'].split('\n')
+        # #                        if x and x.strip() and not x.strip()[0] in ['#',';'] ]
+    # else:
+        # defaults = {}
 
-#    if cfg_filename == 'INLINE DEFAULT CONFIG':
-#        #print("Using default configuration")
-#        # require a configuration file
-#        print("Error: Must specify a configuration file", file=sys.stderr)
-#        sys.exit(2)
-#    else:
-    print("Using configuration file '{}'".format(cfg_filename))
+# #    if cfg_filename == 'INLINE DEFAULT CONFIG':
+# #        #print("Using default configuration")
+# #        # require a configuration file
+# #        print("Error: Must specify a configuration file", file=sys.stderr)
+# #        sys.exit(2)
+# #    else:
+    # print("Using configuration file '{}'".format(cfg_filename))
 
-    # parse rest of arguments with a new ArgumentParser
-    parser = argparse.ArgumentParser(description=__doc__, parents=[conf_parser])
-    parser.add_argument("-f","--temperatures_file", default=None,
-            help="File containing the daily min & max temperature data for all sites")
-    parser.add_argument("-o","--out-file", default=None,
-            help="Filename to output results report to; Default is to ask")
-    parser.add_argument("-s","--station", default='',
-            help="Filter temperatures_file for given station name")
-    parser.add_argument("--start-date", type=str, default=None,
-            help="Date (YYYY-MM-DD) to begin degree-day accumulation calculation")
-    parser.add_argument("--base-temp", type=float, default=None,
-            help="Base tempertaure threshold for degree-day computation")
-    parser.add_argument("--DD-per-gen", type=float, default=None,
-            help="Degree-days required for one generation of development")
-    parser.add_argument("--num-gen", type=int, default=3,
-            help="Number of generations of development to model")
-    parser.add_argument("--min-readings-per-day", type=int, default=4,
-            help="Exclude days with fewer temperature values from min & max calculation")
-    parser.add_argument("--max-num-years-to-norm", type=int, default=6,
-            help="Maximun number of years to use for normal temperature calculation. "
-                "'0' uses all available data")
-    parser.add_argument("--norm-method", default="median",
-            help="Use either 'mean' or 'median' to calculate normal/typical temperatures for projection")
-    parser.add_argument("--num-years-to-add-for-projection", type=int, default=3,
-            help="Number of years of normal temperatures to generate for projection")
-    parser.add_argument("--interpolation-window", type=int, default=3,
-            help="Number of points to average on ends of gaps before interpolating")
-    parser.add_argument("--skiprows", type=int, default=0,
-            help="Number of initial rows to skip of input temperature data file")
-    parser.add_argument("--station-col", default="STATION",
-            help="Column heading for station names in data file")
-    parser.add_argument("--date-col", default="DATE",
-            help="Column heading for dates in data file")
-    parser.add_argument("--time-col", default="TIME",
-            help="Column heading for time in data file")
-    parser.add_argument("--air-temp-col", default="TEMP_A_F",
-            help="Column heading for air temperatures in data file")
-    parser.add_argument('-i', "--interactive", action='store_true', default=False,
-            help="Display interactive plots")
-    parser.add_argument('-q', "--quiet", action='count', default=0,
-            help="Decrease verbosity")
-    parser.add_argument('-v', "--verbose", action='count', default=0,
-            help="Increase verbosity")
-    parser.add_argument("--verbose_level", type=int, default=0,
-            help="Set verbosity level as a number")
+    # # parse rest of arguments with a new ArgumentParser
+    # parser = argparse.ArgumentParser(description=__doc__, parents=[conf_parser])
+    # parser.add_argument("-f","--temperatures_file", default=None,
+            # help="File containing the daily min & max temperature data for all sites")
+    # parser.add_argument("-o","--out-file", default=None,
+            # help="Filename to output results report to; Default is to ask")
+    # parser.add_argument("-s","--station", default='',
+            # help="Filter temperatures_file for given station name")
+    # parser.add_argument("--start-date", type=str, default=None,
+            # help="Date (YYYY-MM-DD) to begin degree-day accumulation calculation")
+    # parser.add_argument("--base-temp", type=float, default=None,
+            # help="Base tempertaure threshold for degree-day computation")
+    # parser.add_argument("--DD-per-gen", type=float, default=None,
+            # help="Degree-days required for one generation of development")
+    # parser.add_argument("--num-gen", type=int, default=3,
+            # help="Number of generations of development to model")
+    # parser.add_argument("--min-readings-per-day", type=int, default=4,
+            # help="Exclude days with fewer temperature values from min & max calculation")
+    # parser.add_argument("--max-num-years-to-norm", type=int, default=6,
+            # help="Maximun number of years to use for normal temperature calculation. "
+                # "'0' uses all available data")
+    # parser.add_argument("--norm-method", default="median",
+            # help="Use either 'mean' or 'median' to calculate normal/typical temperatures for projection")
+    # parser.add_argument("--num-years-to-add-for-projection", type=int, default=3,
+            # help="Number of years of normal temperatures to generate for projection")
+    # parser.add_argument("--interpolation-window", type=int, default=3,
+            # help="Number of points to average on ends of gaps before interpolating")
+    # parser.add_argument("--skiprows", type=int, default=0,
+            # help="Number of initial rows to skip of input temperature data file")
+    # parser.add_argument("--station-col", default="STATION",
+            # help="Column heading for station names in data file")
+    # parser.add_argument("--date-col", default="DATE",
+            # help="Column heading for dates in data file")
+    # parser.add_argument("--time-col", default="TIME",
+            # help="Column heading for time in data file")
+    # parser.add_argument("--air-temp-col", default="TEMP_A_F",
+            # help="Column heading for air temperatures in data file")
+    # parser.add_argument('-i', "--interactive", action='store_true', default=False,
+            # help="Display interactive plots")
+    # parser.add_argument('-q', "--quiet", action='count', default=0,
+            # help="Decrease verbosity")
+    # parser.add_argument('-v', "--verbose", action='count', default=0,
+            # help="Increase verbosity")
+    # parser.add_argument("--verbose_level", type=int, default=0,
+            # help="Set verbosity level as a number")
 
-    parser.set_defaults(**defaults) # add the defaults read from the config file
-    args = parser.parse_args(remaining_argv)
-    vars(args).update({'cfg_filename':cfg_filename})
+    # parser.set_defaults(**defaults) # add the defaults read from the config file
+    # args = parser.parse_args(remaining_argv)
+    # vars(args).update({'cfg_filename':cfg_filename})
 
-    # test for required arguments/parameters
-#    for k in ['start_date',
-#              'base_temp',
-#              'DD_per_gen',
-#             ]:
-#        if not k in args or vars(args)[k] is None:
-#            parser.error("Must specify '{}' parameter".format(k))
+    # # test for required arguments/parameters
+# #    for k in ['start_date',
+# #              'base_temp',
+# #              'DD_per_gen',
+# #             ]:
+# #        if not k in args or vars(args)[k] is None:
+# #            parser.error("Must specify '{}' parameter".format(k))
 
-    logging.getLogger().setLevel(logging.getLogger().getEffectiveLevel()+
-                                 (10*(args.quiet-args.verbose-args.verbose_level)))
-    # Startup output
-    run_time = time.time()
-    logging.info("Started @ {}".format(
-                        datetime.fromtimestamp(run_time).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
-    logging.info("args="+str(args))
+    # logging.getLogger().setLevel(logging.getLogger().getEffectiveLevel()+
+                                 # (10*(args.quiet-args.verbose-args.verbose_level)))
+    # # Startup output
+    # run_time = time.time()
+    # logging.info("Started @ {}".format(
+                        # datetime.fromtimestamp(run_time).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
+    # logging.info("args="+str(args))
 
-    retval = main_process(args)
+    cfg = load_config(sys.argv[1])
+    retval = main_process(cfg)
 
-    # cleanup and exit
-    logging.info("Ended @ {}".format(
-                        datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
-    #input("Press any key to exit")
+    # # cleanup and exit
+    # logging.info("Ended @ {}".format(
+                        # datetime.fromtimestamp(time.time()).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
+    # #input("Press any key to exit")
     return retval
 
 
 #######
 
+DDTOOL_DEFAULT_TFILE_CONFIG = {
+        'temperatures_file': None,
+        'skiprows': 0,
+        'station_col': "STATION",
+        'date_col': "DATE",
+        'time_col': "TIME",
+        'air_temp_col': "TEMP_A_F",
+    }
+
+DDTOOL_DEFAULT_RUN_CONFIG = {
+        'start_date': None,
+        'base_temp': 54.3,
+        'DD_per_gen': 622,
+        'num_gen': 3,
+        'min_readings_per_day': 4, # exclude days with too few temperature reads/points
+        'max_num_years_to_norm': 6,
+        'norm_method': 'median', # use either 'mean' or 'median' for normal/typical temperatures
+        'num_years_to_add_for_projection': 3,
+        'interpolation_window': 3,  # number of points to average on ends of gaps before interpolating
+    }
+    
+     
+def load_config(cfg_filename):
+    incfg = configparser.ConfigParser(inline_comment_prefixes=('#',';'))
+    incfg.optionxform = str # make configparser case-sensitive
+    with open(cfg_filename,'r') as fh:
+        incfg.read_file(chain(("[DEFAULTS]",), fh))
+    incfg = dict(incfg.items("DEFAULTS"))
+    print(incfg)
+    
+    tcfg = copy.deepcopy(DDTOOL_DEFAULT_TFILE_CONFIG)
+    tcfg['temperatures_file'] = incfg.get('temperatures_file', None)
+    
+    sys.exit(0)
+        # tcfg = None,
+    # 'skiprows': 0,
+    # 'station_col': "STATION",
+        # 'date_col': "DATE",
+        # 'time_col': "TIME",
+        # 'air_temp_col': "TEMP_A_F",
+    
+    
+    
+    # defaults = dict(cfg.items("DEFAULTS"))
+    # # special handling of paratmeters that need it like lists
+    # for k in ['num_gen', # ints
+              # 'max_num_years_to_norm',
+              # 'num_years_to_add_for_projection',
+              # 'min_readings_per_day',
+              # 'interpolation_window',
+              # 'skiprows']:
+        # if k in defaults:
+            # defaults[k] = int(defaults[k])
+    # for k in ['base_temp', # floats
+              # 'DD_per_gen']:
+        # if k in defaults:
+            # defaults[k] = float(defaults[k])
+    # for k in ['interactive']: # booleans
+        # if k in defaults:
+            # defaults[k] = defaults[k].lower() in ['true', 'yes', 'y', '1']
+    
 
 class DDToolFrame(ttk.Frame):
+
     def __init__(self, parent, cfg, *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
 
@@ -207,8 +271,13 @@ class DDToolFrame(ttk.Frame):
         self.default_button_bg = self.cfg_file_button.cget('bg') # only need once
         self._update_cfg_file()
 
+        
         ttk.Separator(parent, orient='horizontal').pack(anchor=tk.W, fill=tk.X)
-        foo = ttk.Frame(parent)
+
+        tfile_frame = ttk.Frame(parent)
+        tfile_frame.pack(anchor=tk.W, fill=tk.X, padx=10, pady=2)
+        
+        foo = ttk.Frame(tfile_frame)
         foo.pack(anchor=tk.W, padx=10, pady=2)
         self.temperatures_file_label = ttk.Label(foo, text='')
         self.temperatures_file_label.pack(side=tk.LEFT)
@@ -216,13 +285,17 @@ class DDToolFrame(ttk.Frame):
         self.temperatures_file_button.pack(side=tk.RIGHT)
         self._update_tfile()
 
-        self.add_labeled_entry(parent, 'skiprows', str(cfg.skiprows), self._isdigit_validate)
-        self.add_labeled_entry(parent, 'date_col', cfg.date_col)
-        self.add_labeled_entry(parent, 'time_col', cfg.time_col)
-        self.add_labeled_entry(parent, 'air_temp_col', cfg.air_temp_col)
-        self.add_labeled_entry(parent, 'station_col', cfg.station_col)
+        self.add_labeled_entry(tfile_frame, 'skiprows', str(cfg.skiprows), self._isdigit_validate)
+        self.add_labeled_entry(tfile_frame, 'date_col', cfg.date_col)
+        self.add_labeled_entry(tfile_frame, 'time_col', cfg.time_col)
+        self.add_labeled_entry(tfile_frame, 'air_temp_col', cfg.air_temp_col)
+        self.add_labeled_entry(tfile_frame, 'station_col', cfg.station_col)
         
+        self.load_tfile_button = tk.Button(tfile_frame, text='Load Temperatures File',
+                    state='disabled')
+        self.load_tfile_button.pack(side=tk.BOTTOM)
 
+        
         ttk.Separator(parent, orient='horizontal').pack(anchor=tk.W, fill=tk.X)
 
         self.add_labeled_entry(parent, 'base_temp', cfg.base_temp, self._float_validate)
@@ -233,7 +306,8 @@ class DDToolFrame(ttk.Frame):
         self.tktext = tk.Text(master=parent, state='disabled')
         self.tktext.pack(anchor=tk.W, expand=1, fill=tk.BOTH)
 
-        run_button = ttk.Button(parent, text='RUN', command=self._quit)
+        run_button = ttk.Button(parent, text='RUN',
+                        command=lambda : self.load_tfile_button.config(state='normal'))
         run_button.pack(anchor=tk.S, padx=3, pady=3)
         quit_button = ttk.Button(parent, text='Quit', command=self._quit)
         quit_button.pack(anchor=tk.SE, padx=3, pady=3)
