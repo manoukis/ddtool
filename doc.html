@@ -42,6 +42,35 @@ and see what it does.
         </dd>
 </dl>
 
+<h2> What DDTool does </h2>
+
+DDTool...
+<ol>
+<li> Takes point temperature readings from the temperatures file,
+groups them by date and takes the minimum and maximum values for each date.
+Days where there were less than <code>min_readings_per_day</code> readings are excluded 
+(treated the same as a day with no data at all).
+<li> <i>Note/todo: Outlier detection and rejection should be added at some point.</i>
+<li> Gaps in the min and max temperature series (from missing data) are then filled by linear interpolation
+performed on the windowed mean (<code>interpolation_window</code> window size) of each series.
+In other words, missing days are filled by averaging the values for <code>interpolation_window</code> 
+days before the gap, <code>interpolation_window</code> days after the gap, 
+and then drawing a line between those points.
+<li> Normal (the mean or median for the same day of the year across multiple years)
+minimum and maximum temperature series are calculated using <code>max_num_years_to_norm</code> years of 
+temperature data.  If there isn't <code>max_num_years_to_norm</code> worth of data, DDTool just uses all the
+data it has.
+<li> The minimum and maximum temperature series are extended (projected) by appending the normal values.
+<li> Degree-day values are computed for every day using
+the "single sine" method (Baskerville & Emin 1969, Ecology 50:514-517) and the <code>base_temp</code> parameter
+provided in the configuration file.
+<li> Starting from the provided <code>start_date</code>, the date at which the sum of the degree-day values passes
+the given <code>DD_per_gen</code> is determined.
+This is also calculated for subsequent generations (multiples of <code>DD_per_gen</code>) up to <code>num_gen</code>.
+<li> <i>Note/todo: Many other/alternative thermal accumulation models would be relatively easy to implement.</i>
+<li> Finally, DDTool creates a report in the form of a single html file (viewable in a web browser).
+</ol>
+
 
 <h2> Usage <h2>
 
@@ -159,35 +188,14 @@ That is the same as omitting them entirely.
 
 <h3> Step 3: Run DDTool </h3>
 
-The best way to run DDTool is to drag a configuration file onto the 
+DDTool is run by dragging a configuration file onto the 
 <code>ddtool.cmd</code> program icon in the file browser.
-When run this way, DDTool will use whatever directory the configuration file is in as 
+You can also just double-click/run <code>ddtool.cmd</code> and it will ask you to select a
+configuration file.
+<p>
+DDTool will use whatever directory the configuration file is in as 
 the working directory, so you will only need to specify the filename (not directory) 
 for a temperature file in that same directory and output will, by default, be put there too.
-
-<p>
-DDTool can also be run by double clicking the <code>ddtool.cmd</code> file.
-It will immediately ask for a configuration file, which you can then select using the dialog.
-However, the working directory will be the location of <code>ddtool.cmd</code>, not the 
-directory the configuration file is in.
-
-
-<h2> What DDTool actually does </h2>
-
-DDTool...
-<ol>
-<li> Takes point temperature readings from the temperatures file,
-groups them by date and takes the minimum and maximum values for each date.
-Days where there were less than <code>min_readings_per_day</code> readings are excluded 
-(treated the same as a day with no data at all).
-<li> <i>TODO: Outlier detection and rejection should be added at some point.</i>
-<li> Gaps in the min and max temperature series (from missing data) are then filled by linear interpolation
-performed on the windowed mean (<code>interpolation_window</code> window size) of each series.
-In other words, missing days are filled by averaging the values for <code>interpolation_window</code> 
-days before the gap, <code>interpolation_window</code> days after the gap, 
-and then drawing a line between those points.
-
-</ol>
 
 
 <h2> Final Notes </h2>
