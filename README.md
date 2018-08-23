@@ -12,7 +12,7 @@ conda install matplotlib pandas xlrd
 
 make executable using pyinstaller
 pyinststaller can be installed via conda
-> pyinstaller -D ddtool_html.py
+pyinstaller -D ddtool_html.py
 
 
 
@@ -27,3 +27,5 @@ pip install pandas matplotlib xlrd
 
 for UPX, download UPX (eg. upx394w) and put it under the directory upx (eg. upx\upx394w)
 pyinstaller --clean -D --upx-dir upx\upx394w ddtool_html.py
+Unfortunately, UPX for windows python projects seems to create some corrupted DLLs -_-, so just do...
+pyinstaller -D ddtool_html.py

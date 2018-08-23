@@ -95,8 +95,8 @@ def main(argv):
             print("CRITICAL: Select Configuration File canceled")
             sys.exit(0)
         args.cfg_file = open(cfg_filename)
-        print(args.cfg_file)
-        print(args.cfg_file.name)
+        # set the working directory to the path of the cfg_file
+        os.chdir(os.path.dirname(args.cfg_file.name))
             
     cfg_filename = args.cfg_file.name
     tktext.insert(tk.END, "Using configuration file '{}'\n".format(args.cfg_file.name))

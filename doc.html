@@ -70,7 +70,10 @@ The configuration file <code>examples/Country Club example.cfg</code>
 contains all the parameters and options to tell ddtool what to do.
 <p>
 The file format is simply a list of options and their values.
-Blank lines and comments beginning with '#' are ignored.
+Blank lines and comments beginning with '#' are ignored.<br>
+The example configuration file lists all the options, 
+but most are commented out (line starts with '#') since they are just the default values.
+That is the same as omitting them entirely.
 
 <h5> Required Parameters:</h5>
 <div style="text-indent: 1em;">
@@ -170,7 +173,21 @@ directory the configuration file is in.
 
 
 <h2> What DDTool actually does </h2>
-@TCC -- TODO
+
+DDTool...
+<ol>
+<li> Takes point temperature readings from the temperatures file,
+groups them by date and takes the minimum and maximum values for each date.
+Days where there were less than <code>min_readings_per_day</code> readings are excluded 
+(treated the same as a day with no data at all).
+<li> <i>TODO: Outlier detection and rejection should be added at some point.</i>
+<li> Gaps in the min and max temperature series (from missing data) are then filled by linear interpolation
+performed on the windowed mean (<code>interpolation_window</code> window size) of each series.
+In other words, missing days are filled by averaging the values for <code>interpolation_window</code> 
+days before the gap, <code>interpolation_window</code> days after the gap, 
+and then drawing a line between those points.
+
+</ol>
 
 
 <h2> Final Notes </h2>
