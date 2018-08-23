@@ -58,6 +58,19 @@ INLINE_DEFAULT_CFG_FILE = """
 
 ###
 def main(argv):
+
+    # Setup the tk root window first since we might need an askopenfilename for config file
+    tkroot = tk.Tk()
+    tkroot.title("DDTool")
+    #tkroot.withdraw()
+    tktext = tk.Text(master=tkroot)
+    tktext.pack(side=tk.RIGHT)
+    # A text widget for status/debug output
+    tktext.insert(tk.END, "DDTool:\n\n")
+    tktext.insert(tk.END, "Started at {}\n".format(time.strftime("%Y-%m-%d %T %z")))
+    tktext.see(tk.END) # scroll if needed
+    tkroot.update()
+
     # parse cfg_file argument and set defaults
     conf_parser = argparse.ArgumentParser(description=__doc__,
                                           add_help=False)  # turn off help so later parse handles it
@@ -65,38 +78,56 @@ def main(argv):
     inline_default_cfg_file.name = 'INLINE DEFAULT CONFIG' # needs to have a name for argparse to work with it
     conf_parser.add_argument(dest='cfg_file', nargs='?', type=argparse.FileType('r'),
                              default=inline_default_cfg_file,
-                             help="Config file specifiying options/parameters.\n"
+                             help="Config file specifying options/parameters.\n"
                              "Any long option can be set by removing the leading '--' and replacing '-' with '_'")
     args, remaining_argv = conf_parser.parse_known_args(argv)
     # build the config (read config files)
     cfg_filename = None
-    if args.cfg_file:
-        cfg_filename = args.cfg_file.name
-        cfg = configparser.ConfigParser(inline_comment_prefixes=('#',';'))
-        cfg.optionxform = str # make configparser case-sensitive
-        cfg.read_file(chain(("[DEFAULTS]",), args.cfg_file))
-        defaults = dict(cfg.items("DEFAULTS"))
-        # special handling of paratmeters that need it like lists
-        for k in ['num_gen', # ints
-                  'max_num_years_to_norm',
-                  'num_years_to_add_for_projection',
-                  'min_readings_per_day',
-                  'interpolation_window',
-                  'skiprows']:
-            if k in defaults:
-                defaults[k] = int(defaults[k])
-        for k in ['base_temp', # floats
-                  'DD_per_gen']:
-            if k in defaults:
-                defaults[k] = float(defaults[k])
-        for k in ['interactive']: # booleans
-            if k in defaults:
-                defaults[k] = defaults[k].lower() in ['true', 'yes', 'y', '1']
-        #if( 'files' in defaults ): # files needs to be a list
-        #    defaults['files'] = [ x for x in defaults['files'].split('\n')
-        #                        if x and x.strip() and not x.strip()[0] in ['#',';'] ]
-    else:
-        defaults = {}
+
+    # if config file not provided as arg, use a askopenfilename dialog
+    if not args.cfg_file or args.cfg_file.name == 'INLINE DEFAULT CONFIG':
+        # defaults = {}
+        cfg_filename = tk.filedialog.askopenfilename(initialdir=".",
+                        title = "Select Configuration File",
+                        defaultextension=".cfg",
+                        filetypes = (("Config files",("*.cfg")), ("all files","*.*")))
+        if not cfg_filename:
+            print("CRITICAL: Select Configuration File canceled")
+            sys.exit(0)
+        args.cfg_file = open(cfg_filename)
+        print(args.cfg_file)
+        print(args.cfg_file.name)
+            
+    cfg_filename = args.cfg_file.name
+    tktext.insert(tk.END, "Using configuration file '{}'\n".format(args.cfg_file.name))
+    tktext.see(tk.END) # scroll if needed
+    tkroot.update()
+
+    cfg = configparser.ConfigParser(inline_comment_prefixes=('#',';'))
+    cfg.optionxform = str # make configparser case-sensitive
+    cfg.read_file(chain(("[DEFAULTS]",), args.cfg_file))
+    defaults = dict(cfg.items("DEFAULTS"))
+    # special handling of parameters that need it like lists
+    for k in ['num_gen', # ints
+              'max_num_years_to_norm',
+              'num_years_to_add_for_projection',
+              'min_readings_per_day',
+              'interpolation_window',
+              'skiprows']:
+        if k in defaults:
+            defaults[k] = int(defaults[k])
+    for k in ['base_temp', # floats
+              'DD_per_gen']:
+        if k in defaults:
+            defaults[k] = float(defaults[k])
+    for k in ['interactive']: # booleans
+        if k in defaults:
+            defaults[k] = defaults[k].lower() in ['true', 'yes', 'y', '1']
+    #if( 'files' in defaults ): # files needs to be a list
+    #    defaults['files'] = [ x for x in defaults['files'].split('\n')
+    #                        if x and x.strip() and not x.strip()[0] in ['#',';'] ]
+    # else:
+        # defaults = {}
 
     if cfg_filename == 'INLINE DEFAULT CONFIG':
         #print("Using default configuration")
@@ -117,7 +148,7 @@ def main(argv):
     parser.add_argument("--start-date", type=str, default=None,
             help="Date (YYYY-MM-DD) to begin degree-day accumulation calculation")
     parser.add_argument("--base-temp", type=float, default=None,
-            help="Base tempertaure threshold for degree-day computation")
+            help="Base temperature threshold for degree-day computation")
     parser.add_argument("--DD-per-gen", type=float, default=None,
             help="Degree-days required for one generation of development")
     parser.add_argument("--num-gen", type=int, default=3,
@@ -125,7 +156,7 @@ def main(argv):
     parser.add_argument("--min-readings-per-day", type=int, default=4,
             help="Exclude days with fewer temperature values from min & max calculation")
     parser.add_argument("--max-num-years-to-norm", type=int, default=6,
-            help="Maximun number of years to use for normal temperature calculation. "
+            help="Maximum number of years to use for normal temperature calculation. "
                 "'0' uses all available data")
     parser.add_argument("--norm-method", default="median",
             help="Use either 'mean' or 'median' to calculate normal/typical temperatures for projection")
@@ -172,7 +203,7 @@ def main(argv):
                         datetime.fromtimestamp(run_time).astimezone().strftime("%Y-%m-%d %H:%M:%S.%f %z")))
     logging.info("args="+str(args))
 
-    retval = main_process(args)
+    retval = main_process(args, tkroot, tktext)
 
     # cleanup and exit
     logging.info("Ended @ {}".format(
@@ -183,20 +214,8 @@ def main(argv):
 
 #######
 
-def main_process(args):
+def main_process(args, tkroot, tktext):
     print("main process")
-
-    tkroot = tk.Tk()
-    tkroot.title("DDTool")
-    #tkroot.withdraw()
-    tktext = tk.Text(master=tkroot)
-    tktext.pack(side=tk.RIGHT)
-
-    tktext.insert(tk.END, "DDTool:\n\n")
-    tktext.insert(tk.END, "Started at {}\n".format(time.strftime("%Y-%m-%d %T %z")))
-    tktext.insert(tk.END, "Using configuration file '{}'\n".format(args.cfg_filename))
-    tktext.see(tk.END) # scroll if needed
-    tkroot.update()
 
     if args.temperatures_file:
         temperatures_filename = args.temperatures_file
@@ -206,7 +225,7 @@ def main_process(args):
                 defaultextension=".xlsx",
                 filetypes = (("Excel files",("*.xlsx","*.xls")), ("all files","*.*")))
         if not temperatures_filename:
-            logging.critical("Select Temperatures File cancled")
+            logging.critical("Select Temperatures File canceled")
             sys.exit(0)
 
     tktext.insert(tk.END, "Loading temperatures file '{}'\n".format(temperatures_filename))
@@ -221,7 +240,7 @@ def main_process(args):
 
     ## Plot
 
-    ## Main results figure ... spaehtti-like plot
+    ## Main results figure ... spaghetti-like plot
     fig = plt.figure(figsize=(7,4))
     ax = fig.add_subplot(1,1,1)
 
@@ -241,7 +260,7 @@ def main_process(args):
     for gen in range(1,num_gen+1):
         fdate[gen] = cDD[tmp>DD_per_gen*gen].index[0]
     max_plot_date = fdate[-1] # track maximum date used
-    print(fdate)
+    print("Generation Dates (first is start date):", *fdate, sep="\n\t")
 
     # previous years
     lab = 'previous years'
@@ -252,7 +271,7 @@ def main_process(args):
             continue
         tmp = cDD-cDD.loc[sd]
         tmp = tmp.loc[sd:tmp[tmp>DD_per_gen*num_gen].index[0]]
-        # @TCC -- could distinquish previous years used in normal from older years
+        # @TCC -- could distinguish previous years used in normal from older years
         c = 'k'
         if sd < norm_start:
             c = 'k'
@@ -355,7 +374,7 @@ def main_process(args):
                 defaultextension=".html",
                 filetypes = (("html files","*.html"), ("all files","*.*")))
         if not outfilename:
-            logging.critical("Save cancled")
+            logging.critical("Save canceled")
             sys.exit(0)
     else:
         outfilename = args.out_file
@@ -395,9 +414,9 @@ def main_process(args):
 <ul style='list-style-type:none'>
 <li> Filename : {temperatures_filename}
 <li> Station : {station}
-<li> Lastest temperatre date : {latest_temp_date}
+<li> Latest temperature date : {latest_temp_date}
 <li> Earliest temperature date : {earliest_temp_date}
-<li> Normal temeperatures calcuated using : {norm_start} to {latest_temp_date}
+<li> Normal temperatures calculated using : {norm_start} to {latest_temp_date}
 </ul>
 
 <h3> Results </h3>
@@ -511,7 +530,7 @@ def load_temperature_data(fn, args):
     print(df.head())
 
     # min and max AT
-    gb = df.groupby(df['date'].rename('foo'))['AT']
+    gb = df.groupby(df['date'].rename('date_group'))['AT']
     mmdf = gb.count().to_frame()
     mmdf.columns = ['cntAT']
     print(mmdf.head())

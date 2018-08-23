@@ -10,9 +10,9 @@ conda install matplotlib pandas xlrd
 '''
 
 
-make single executable using pyinstaller
+make executable using pyinstaller
 pyinststaller can be installed via conda
-> pyinstaller -F ddtool.py
+> pyinstaller -D ddtool_html.py
 
 
 
