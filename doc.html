@@ -25,23 +25,27 @@ Extract the contents of the zip archive to the location you want to run ddtool f
 and nothing in <code>ddtool_html</code> should be messed with.<br>
 The entire ddtool directory can be safely moved.
 
-<h2> Usage <h2>
 
-<h3> Example </h3>
-An example is included in the zip archive in the 'examples' directory.
+<h3> Example Files </h3>
+An example is included in the zip archive in the 'examples' directory.<br>
+Someone impatient can just drag <code>Country Club example.cfg</code> onto <code>ddtool.cmd</code>
+and see what it does.
 <dl>
     <dt> Country Club example.cfg
         <dd> Configuration file
         </dd>
     <dt> LAAR_CountryClub2000-2018_Temps.xlsx
         <dd> Temperature data </dd>
-    <dt> Country Club 2018-01-01 2018-07-09.html
+    <dt> LAAR_CountryClub2000-2018_Temps 2018-01-13 2018-08-22.html
         <dd> Previously generated output file<br>
-        Running ddtool will produce a new file with a different date.
+        Running ddtool will produce a new file with a different last date (which is the date it was run).
         </dd>
 </dl>
 
-<h4> Step 1: Prepare the temperature data </h4>
+
+<h2> Usage <h2>
+
+<h3> Step 1: Prepare the temperature data </h3>
 
 The central input for ddtool is an Excel (<code>.xlsx</code>) file containing temperature readings.<br>
 <code>examples/LAAR_CountryClub2000-2018_Temps.xlsx</code> is an example.<br>
@@ -60,7 +64,7 @@ Default column names are given in [], but can be changed in the <code>.cfg</code
 </ul>
 </div>
 
-<h4> Step 2: Prepare the configuration (<code>.cfg</code>) file </h4>
+<h3> Step 2: Prepare the configuration (<code>.cfg</code>) file </h3>
 
 The configuration file <code>examples/Country Club example.cfg</code>
 contains all the parameters and options to tell ddtool what to do.
@@ -88,15 +92,30 @@ Blank lines and comments beginning with '#' are ignored.
 </dl>
 </div>
 
+<h5> Recommended Parameters:</h5>
+<div style="text-indent: 1em;">
+<dl style="margin-top: 0em;">
+	<dt> temperatures_file </dt>
+	<dd> The Excel file containing temperature data prepared in step 1.<br>
+		<i>A Select File dialog will open if this is not given in the config.</i></dd>
+	<dt> min_readings_per_day : default is 4 </dt>
+	<dd> Days with less than this number of temperature readings will be
+		treated as missing data, so min and max temperatures will be estimated by interpolation.<br>
+		<i>The value should be something like 75% or more of the number nominal number of
+		temperature values recorded per day.  For readings every 15 minutes (much better than every few hours)
+		that would be 72.  The sample rate of the example data is very low.</i> </dd>
+</dl>
+</div>
+
 <h5> Optional Parameters: (Will use default value if omitted or commented out with a '#')</h5>
 <div style="text-indent: 1em;">
 <dl style="margin-top: 0em;">
+	<dt> station </dt>
+	<dd> The name of the weather/temperature station.
+	ddtool will only use rows from the tempertaures_file where the station exactly matches.</dd>
 	<dt> num_gen : default is 3 <dt>
 	<dd> The number of generations of thermal accumulation to model and/or project. </dd>
 	<dt> &nbsp; </dt><dd></dd>
-	<dt> min_readings_per_day : default is 4 </dt>
-	<dd> Days with less than this number of temperature readings will be
-		treated as missing data, so min and max temperatures will be estimated by interpolation.</dd>
 	<dt> interpolation_window : default is 3</dt>
 	<dd> Min and max temperature data is smoothed by a running mean with this window size
 		before missing values are filled via linear interpolation. </dd>
@@ -113,7 +132,7 @@ Blank lines and comments beginning with '#' are ignored.
 	<dd> The number of years of temperatures to generate (based on normal min and max temperatures)
 		for projections.
 		You may need to increase this number if projecting for many generations and/or very slow development. </dd>
-	<dt> &nbsp; </dt><dd></dd>
+<!--	<dt> &nbsp; </dt><dd></dd> -->
 	<dt> skiprows : default is 0 </dt>
 	<dd> The number of rows in the <code>temperatures_file</code> before the header line. </dd>
 	<dt> station_col : default is <code>STATION</code> </dt>
@@ -124,7 +143,7 @@ Blank lines and comments beginning with '#' are ignored.
 	<dd> The column heading for the time column in the <code>temperatures_file</code> </dd>
 	<dt> air_temp_col : default is <code>TEMP_A_F</code> </dt>
 	<dd> The column heading for the air temperature column in the <code>temperatures_file</code> </dd>
-	<dt> &nbsp; </dt><dd></dd>
+<!--	<dt> &nbsp; </dt><dd></dd> -->
 	<dt> out_file </dt>
 	<dd> If set, ddtool will output report to the given
 		filename instead of opening the 'Save As' dialog. </dd>
@@ -135,7 +154,26 @@ Blank lines and comments beginning with '#' are ignored.
 </div>
 
 
+<h3> Step 3: Run DDTool </h3>
 
+The best way to run DDTool is to drag a configuration file onto the 
+<code>ddtool.cmd</code> program icon in the file browser.
+When run this way, DDTool will use whatever directory the configuration file is in as 
+the working directory, so you will only need to specify the filename (not directory) 
+for a temperature file in that same directory and output will, by default, be put there too.
+
+<p>
+DDTool can also be run by double clicking the <code>ddtool.cmd</code> file.
+It will immediately ask for a configuration file, which you can then select using the dialog.
+However, the working directory will be the location of <code>ddtool.cmd</code>, not the 
+directory the configuration file is in.
+
+
+<h2> What DDTool actually does </h2>
+@TCC -- TODO
+
+
+<h2> Final Notes </h2>
 
 <b>IMPORTANT NOTE: Make sure the same units for temperature are used 
 in the temperatures file and <code>.cfg</code> file
